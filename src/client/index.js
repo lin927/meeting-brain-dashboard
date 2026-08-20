@@ -3,14 +3,27 @@
  *
  * 驾驶舱通过 fetch 调用本机后端（默认 http://127.0.0.1:3400，可用
  * window.MEETING_BRAIN_API 覆盖）。数据仍只在本机 SQLite。
+ *
+ * 注意：静态 client 插件没有 React 闭包注入（那是动态插件 evaluator 特性），
+ * React 必须通过 DSH 模块系统的 require 显式取得。
  */
+
+/** DSH 客户端模块系统解析的外部依赖（bundle 中保留为 require("react")）。 */
+const React = require('react')
 
 /** 后端地址：默认本机 3400 端口，可在页面注入 window.MEETING_BRAIN_API 覆盖。 */
 const API = () => (typeof window !== 'undefined' && window.MEETING_BRAIN_API) || 'http://127.0.0.1:3400'
 
+/** 显式取浏览器全局 fetch；DSH 模块环境不保证裸标识符可见。 */
+const fetchGlobal = () => {
+  const w = (typeof window !== 'undefined') ? window : globalThis
+  if (w.fetch === undefined) throw new Error('当前环境无 fetch，无法连接本地后端')
+  return w.fetch.bind(w)
+}
+
 async function api(path, body) {
   const url = API() + path
-  const res = await fetch(url, body === undefined
+  const res = await fetchGlobal()(url, body === undefined
     ? {}
     : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   if (!res.ok) {
