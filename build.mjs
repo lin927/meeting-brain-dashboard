@@ -49,7 +49,7 @@ await build({
   outfile: 'lib/index.js',
   sourcemap: false,
   logLevel: 'info',
-  external: ['@deepseek-ai/cordis'],
+  external: ['@deepseek-ai/cordis', '@deepseek-ai/dsh-tools'],
 });
 
 console.log('✅ lib/client.js（驾驶舱 UI）与 lib/index.js（会议工具 host half）构建完成');

@@ -4,10 +4,15 @@
  * 让用户在 DSH 会话里直接问会议问题（不限于驾驶舱 tab）：
  *   - meeting_brain_ask：语义问答（跨会议检索 + DeepSeek 生成，含来源）
  *   - meeting_brain_todos：按时间范围查待办（今天/昨天/本周/近N天）
+ *   - meeting_brain_keywords：关键词全文检索（哪些会议提到XX）
  *
  * 工具通过 HTTP 调用本机后端（localhost:3400），与驾驶舱共用同一数据源。
  * 数据仍只在本机 SQLite；问答把命中片段发往 DeepSeek 云端（用户已确认）。
  */
+
+// DSH 工具注册必须经过 defineTool 编译（parameters DSL → JSON Schema）。
+// @deepseek-ai/dsh-tools 由 DSH 运行时提供，构建时保持外部引用。
+import { defineTool } from '@deepseek-ai/dsh-tools'
 
 /** 后端地址：默认本机 3400，可用 MEETING_BRAIN_API 环境变量覆盖。 */
 const BACKEND = () => process.env.MEETING_BRAIN_API || 'http://127.0.0.1:3400'
@@ -41,7 +46,12 @@ export const inject = ['tools']
 export function apply(ctx) {
   const tools = ctx.tools
 
-  tools.register({
+  // 必须用 defineTool 编译（把 parameters DSL → 完整 JSON Schema 再注册），
+  // 直接 register 原始对象会把 DSL 原样透传给模型 API（无顶层 type:object），
+  // DeepSeek 会拒绝: Invalid schema for function ... got 'type: null'。
+  const def = (o) => tools.register(defineTool(o))
+
+  def({
     name: 'meeting_brain_ask',
     description:
       '跨会议语义问答：在本地会议库里检索与问题相关的听记/摘要/待办，并结合 DeepSeek 生成带来源的答案。'
@@ -72,7 +82,7 @@ export function apply(ctx) {
     },
   })
 
-  tools.register({
+  def({
     name: 'meeting_brain_todos',
     description:
       '按时间范围查询会议待办（今天/昨天/本周/近N天）。'
@@ -116,7 +126,7 @@ export function apply(ctx) {
     },
   })
 
-  tools.register({
+  def({
     name: 'meeting_brain_keywords',
     description:
       '关键词全文检索：找出明确包含指定词的会议（标题/摘要/逐字稿中直接出现该词）。'
