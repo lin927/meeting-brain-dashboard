@@ -1,0 +1,7 @@
+# dsh bundle patch: registers the meeting-brain-dashboard client plugin into a
+# profile's loader tree. The row name resolves the package; its dsh.client
+# declaration + ./client export make the client-modules scanner serve the
+# browser half at /plugins/meeting-brain-dashboard/client.js.
+- insert:
+    - id: meeting-brain-dashboard
+      name: 'meeting-brain-dashboard'
