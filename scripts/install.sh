@@ -38,11 +38,16 @@ if ! command -v node >/dev/null 2>&1; then
     die "未找到 Homebrew。请先安装 Node.js >= 22.5（https://nodejs.org）后重试。"
   fi
 fi
-NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
-if [ "$NODE_MAJOR" -lt 22 ]; then
-  die "Node.js 版本过低（$(node -v)），需要 >= 22.5。请升级后重试。"
+# 从 node -v（如 v24.13.0）提取主版本号，避免不同 shell 的引号传递差异
+NODE_VER="$(node -v)"
+NODE_MAJOR="$(echo "$NODE_VER" | sed -n 's/^v\{0,1\}\([0-9]*\)\..*/\1/p')"
+if [ -z "$NODE_MAJOR" ]; then
+  die "无法解析 Node.js 版本：$NODE_VER"
 fi
-info "Node.js $(node -v) OK"
+if [ "$NODE_MAJOR" -lt 22 ]; then
+  die "Node.js 版本过低（$NODE_VER），需要 >= 22.5。请升级后重试。"
+fi
+info "Node.js $NODE_VER OK"
 
 # ---------- 2. 钉钉 DWS CLI ----------
 if ! command -v dws >/dev/null 2>&1; then

@@ -31,11 +31,16 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     Warn "未检测到 Node.js。请从 https://nodejs.org 安装 LTS（>= 22.5）后重试。"
     Die '需要 Node.js >= 22.5'
 }
-$nodeMajor = [int](node -p 'process.versions.node.split(".")[0]')
-if ($nodeMajor -lt 22) {
-    Die "Node.js 版本过低（$(node -v)），需要 >= 22.5。请升级后重试。"
+# 从 node -v（如 v24.13.0）提取主版本号，避免跨 PowerShell 传参引号问题
+$nodeVer = (node -v).Trim()
+if ($nodeVer -notmatch '^v?(\d+)\.') {
+    Die "无法解析 Node.js 版本：$nodeVer"
 }
-Info "Node.js $(node -v) OK"
+$nodeMajor = [int]$Matches[1]
+if ($nodeMajor -lt 22) {
+    Die "Node.js 版本过低（$nodeVer），需要 >= 22.5。请升级后重试。"
+}
+Info "Node.js $nodeVer OK"
 
 # ---------- 2. 钉钉 DWS CLI ----------
 if (-not (Get-Command dws -ErrorAction SilentlyContinue)) {
