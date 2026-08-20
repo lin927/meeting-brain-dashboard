@@ -9,6 +9,11 @@
 |---|---|---|
 | 听记数据存储 | 本机 SQLite（`~/.dsh/meetings/meeting-brain.sqlite`） | ✅ 本机 |
 | 语义嵌入 | bge-small-zh 中文模型（首次联网下载 24MB，之后离线） | ✅ 本机 |
+
+> ⚠️ **模型下载源**：默认从 HuggingFace 主站下载，国内网络可能超时（表现为语义问答报「fetch failed」）。
+> 若首次同步后语义检索失败，设置环境变量走国内镜像：`MEETING_BRAIN_MIRROR=1`（hf-mirror.com），
+> 然后重启后端重试；也可手动把模型缓存放到
+> `node_modules/@huggingface/transformers/.cache/Xenova/bge-small-zh-v1.5/`。
 | 向量检索 / 待办 / 统计 | 本机计算 | ✅ 本机 |
 | 驾驶舱界面 | 本机浏览器 + DSH Web | ✅ 本机 |
 | **AI 问答 / 深度总结** | 会议相关片段发送至 **DeepSeek 云端**生成 | ⚠️ 出网 |
