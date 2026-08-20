@@ -51,12 +51,18 @@ info "Node.js $NODE_VER OK"
 
 # ---------- 2. 钉钉 DWS CLI ----------
 if ! command -v dws >/dev/null 2>&1; then
-  warn "未检测到钉钉 DWS CLI，需要安装后才能同步听记。"
-  warn "安装方式（二选一）："
-  warn "  A. 官方安装脚本：curl -fsSL https://dws.dingtalk.com/install | bash"
-  warn "  B. 手动安装：请参考 https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli"
-  warn "安装完成后重新运行本脚本，并执行: dws login"
-else
+  warn "未检测到钉钉 DWS CLI，尝试通过 npm 全局安装…"
+  if npm install -g dingtalk-workspace-cli 2>/dev/null; then
+    info "dws 已安装: $(dws --version 2>/dev/null || echo 'OK')"
+  else
+    warn "npm 安装失败（可能网络或权限问题）。请手动安装："
+    warn "  方式 A：npm install -g dingtalk-workspace-cli"
+    warn "  方式 B：curl -fsSL https://dws.dingtalk.com/install | bash"
+    warn "  参考：https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli"
+    warn "安装完成后重新运行本脚本，并执行: dws login"
+  fi
+fi
+if command -v dws >/dev/null 2>&1; then
   info "DWS $(dws --version 2>/dev/null || echo '已安装') OK"
   if ! ls "$HOME/.dws/token.json" >/dev/null 2>&1; then
     warn "检测到 DWS 已安装但未登录，请执行: dws login"
