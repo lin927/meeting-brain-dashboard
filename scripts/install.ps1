@@ -138,7 +138,17 @@ Info ("DSH Web profile 已存在（" + $ProfileDir + "）")
 #   - package.json 声明 dsh.client（client-modules 扫描后挂载浏览器 half）
 #   - 零生产依赖：profile 的 pnpm install 不会重复下载 transformers/onnxruntime
 #   - pnpm 的 file: 依赖以硬链接同步整个仓库目录，cordis.patch.yml 自动带上
-$pkgJson = Get-Content (Join-Path $ProfileDir 'package.json') -Raw | ConvertFrom-Json
+# 修复 BOM：PowerShell 5.1 的 Set-Content -Encoding UTF8 会写入 BOM，
+# 而 DSH 的 readProfileManifest 用 JSON.parse 读 package.json，不接受 BOM。
+# 先剥离已存在的 BOM，再用无 BOM 的 UTF-8 写回。
+$profilePkgPath = Join-Path $ProfileDir 'package.json'
+$profileRaw = [System.IO.File]::ReadAllText($profilePkgPath)
+if ($profileRaw.Length -gt 0 -and [int][char]$profileRaw[0] -eq 0xFEFF) {
+    $profileRaw = $profileRaw.Substring(1)
+    [System.IO.File]::WriteAllText($profilePkgPath, $profileRaw, (New-Object System.Text.UTF8Encoding($false)))
+    Warn '已修复 profile package.json 的 BOM 标记'
+}
+$pkgJson = $profileRaw | ConvertFrom-Json
 if ($null -eq $pkgJson.dependencies -or -not $pkgJson.dependencies.$PackageName) {
     Info '注册插件到 DSH Web profile…'
     if ($null -eq $pkgJson.dependencies) { $pkgJson | Add-Member -NotePropertyName dependencies -NotePropertyValue @{} }
@@ -149,7 +159,9 @@ if ($null -eq $pkgJson.dependencies -or -not $pkgJson.dependencies.$PackageName)
     if ($pkgJson.dsh.profile.bundles -notcontains $PackageName) {
         $pkgJson.dsh.profile.bundles += $PackageName
     }
-    $pkgJson | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $ProfileDir 'package.json') -Encoding UTF8
+    # 用无 BOM 的 UTF-8 写出（避免 PowerShell Set-Content 加 BOM）
+    $profileJson = $pkgJson | ConvertTo-Json -Depth 10
+    [System.IO.File]::WriteAllText($profilePkgPath, $profileJson, (New-Object System.Text.UTF8Encoding($false)))
     Info '安装 profile 依赖（pnpm，仅插件本身，秒级完成）…'
     Push-Location $ProfileDir
     $oldEap = $ErrorActionPreference
