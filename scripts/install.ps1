@@ -73,22 +73,31 @@ if (-not (Test-Path 'node_modules')) {
 Info '构建 client 插件 bundle…'
 npm run build
 
-# ---------- 4. 检测并引导安装 DSH（DeepSeek Harness） ----------
+# ---------- 4. 检测并安装 DSH（DeepSeek Harness） ----------
 # 驾驶舱插件运行在 DSH Web 里；本仓库不包含 DSH 本体，只包含插件。
-# 检测标志：DSH Web 首次启动后会生成 ~/.dsh/profiles/web/package.json。
+# 步骤：装 dsh 全局命令 → 启动一次 dsh web 生成 profile → 本脚本继续注册插件。
+if (-not (Get-Command dsh -ErrorAction SilentlyContinue)) {
+    Warn '未检测到 dsh 命令，尝试通过 npm 全局安装 @deepseek-ai/dsh…'
+    $null = npm install -g @deepseek-ai/dsh 2>$null
+    if (-not (Get-Command dsh -ErrorAction SilentlyContinue)) {
+        Write-Host ''
+        Die 'npm 安装 dsh 失败。请手动执行：npm install -g @deepseek-ai/dsh，然后重新运行本脚本。'
+    }
+    Info 'dsh 已安装 OK'
+}
+# DSH Web 首次启动后才会生成 profile（插件注册目标）
 if (-not (Test-Path (Join-Path $ProfileDir 'package.json'))) {
     Write-Host ''
-    Warn ("未检测到 DSH（DeepSeek Harness）Web profile：" + $ProfileDir)
-    Warn '会议驾驶舱插件需要先有 DSH Web 才能注册。本仓库不含 DSH 本体，请先安装：'
+    Warn ("DSH Web 尚未启动过（缺 profile：" + $ProfileDir + "）。")
+    Warn '请执行以下命令启动 DSH Web（首次启动会生成 profile）：'
     Write-Host ''
-    Warn '  【1】确保已安装 Node.js >= 22.5（本脚本前面已检查）'
-    Warn '  【2】启动 DSH Web（首次会自动安装并生成 profile）：'
-    Warn '        npx @deepseek-ai/dsh web'
-    Warn '      说明：首次运行 npx 会提示安装 @deepseek-ai/dsh 包，输入 y 确认。'
-    Warn '  【3】确认浏览器打开 http://127.0.0.1:3080 看到 DSH 界面后，'
-    Warn '        关闭 DSH，再重新运行本脚本。'
+    Warn '        dsh web'
+    Warn '      或（不想全局安装时）：npx @deepseek-ai/dsh web'
     Write-Host ''
-    Die '请先按上面步骤安装并启动一次 DSH Web，然后重新运行本脚本。'
+    Warn '确认浏览器打开 http://127.0.0.1:3080 看到 DSH 界面后，'
+    Warn '关闭 DSH，再重新运行本脚本。'
+    Write-Host ''
+    Die '请先启动一次 DSH Web 生成 profile，然后重新运行本脚本。'
 }
 Info ("DSH Web profile 已存在（" + $ProfileDir + "）")
 # 注：meeting-brain-dashboard 是「客户端插件 + bundle patch」双角色包——

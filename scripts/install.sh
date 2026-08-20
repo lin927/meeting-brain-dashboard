@@ -79,22 +79,31 @@ fi
 info "构建 client 插件 bundle…"
 npm run build
 
-# ---------- 4. 检测并引导安装 DSH（DeepSeek Harness） ----------
+# ---------- 4. 检测并安装 DSH（DeepSeek Harness） ----------
 # 驾驶舱插件运行在 DSH Web 里；本仓库不包含 DSH 本体，只包含插件。
-# 检测标志：DSH Web 首次启动后会生成 ~/.dsh/profiles/web/package.json。
+# 步骤：装 dsh 全局命令 → 启动一次 dsh web 生成 profile → 本脚本继续注册插件。
+if ! command -v dsh >/dev/null 2>&1; then
+  warn "未检测到 dsh 命令，尝试通过 npm 全局安装 @deepseek-ai/dsh…"
+  if npm install -g @deepseek-ai/dsh 2>/dev/null; then
+    info "dsh 已安装: $(dsh --version 2>/dev/null || echo 'OK')"
+  else
+    echo
+    die "npm 安装 dsh 失败。请手动执行：npm install -g @deepseek-ai/dsh，然后重新运行本脚本。"
+  fi
+fi
+# DSH Web 首次启动后才会生成 profile（插件注册目标）
 if [ ! -f "$PROFILE_DIR/package.json" ]; then
   echo
-  warn "未检测到 DSH（DeepSeek Harness）Web profile：$PROFILE_DIR"
-  warn "会议驾驶舱插件需要先有 DSH Web 才能注册。本仓库不含 DSH 本体，请先安装："
+  warn "DSH Web 尚未启动过（缺 profile：$PROFILE_DIR）。"
+  warn "请执行以下命令启动 DSH Web（首次启动会生成 profile）："
   echo
-  warn "  【1】确保已安装 Node.js >= 22.5（本脚本前面已检查）"
-  warn "  【2】启动 DSH Web（首次会自动安装并生成 profile）："
-  warn "        npx @deepseek-ai/dsh web"
-  warn "      说明：首次运行 npx 会提示安装 @deepseek-ai/dsh 包，输入 y 确认。"
-  warn "  【3】确认浏览器打开 http://127.0.0.1:3080 看到 DSH 界面后，"
-  warn "        Ctrl+C 停止 DSH，再重新运行本脚本。"
+  warn "        dsh web"
+  warn "      或（不想全局安装时）：npx @deepseek-ai/dsh web"
   echo
-  die "请先按上面步骤安装并启动一次 DSH Web，然后重新运行本脚本。"
+  warn "确认浏览器打开 http://127.0.0.1:3080 看到 DSH 界面后，"
+  warn "Ctrl+C 停止 DSH，再重新运行本脚本。"
+  echo
+  die "请先启动一次 DSH Web 生成 profile，然后重新运行本脚本。"
 fi
 info "DSH Web profile 已存在（$PROFILE_DIR）"
 
