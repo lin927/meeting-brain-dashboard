@@ -1,0 +1,51 @@
+{
+  "name": "meeting-brain-dashboard",
+  "version": "0.2.0",
+  "description": "会议智能中枢分发包：本地后端（同步钉钉听记 + 本地向量检索 + DeepSeek 问答）+ DSH 驾驶舱 Client 插件。数据留在各自电脑，AI 生成走 DeepSeek 云端。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ],
+      "platform": "web"
+    }
+  },
+  "files": [
+    "lib"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "server": "node server/index.js",
+    "server:dev": "node --watch server/index.js",
+    "install:mac": "bash scripts/install.sh",
+    "install:win": "powershell -ExecutionPolicy Bypass -File scripts/install.ps1"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.0.0",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
+    "react": "^18.0.0"
+  },
+  "license": "MIT"
+}
