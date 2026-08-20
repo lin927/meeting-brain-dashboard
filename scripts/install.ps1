@@ -182,14 +182,16 @@ try {
     Info "启动后端（后台）: http://127.0.0.1:$BackendPort"
     $logDir = Join-Path $DshHome 'meetings'
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
-    $logFile = Join-Path $logDir 'backend.log'
-    Start-Process node -ArgumentList @("$RepoDir\server\index.js") -RedirectStandardOutput $logFile -RedirectStandardError $logFile -WindowStyle Hidden
+    # Start-Process 要求 stdout/stderr 重定向到不同文件
+    $logOut = Join-Path $logDir 'backend.out.log'
+    $logErr = Join-Path $logDir 'backend.err.log'
+    Start-Process node -ArgumentList @("$RepoDir\server\index.js") -RedirectStandardOutput $logOut -RedirectStandardError $logErr -WindowStyle Hidden
     Start-Sleep -Seconds 2
     try {
         $null = Invoke-RestMethod -Uri "http://127.0.0.1:$BackendPort/api/health" -TimeoutSec 3
         Info '后端启动成功'
     } catch {
-        Warn "后端启动可能失败，查看日志: Get-Content $logFile -Tail 20"
+        Warn "后端启动可能失败，查看日志: Get-Content $logErr -Tail 20"
     }
 }
 
