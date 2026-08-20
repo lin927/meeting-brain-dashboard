@@ -33,7 +33,13 @@ bash scripts/install.sh        # macOS
 # powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 ```
 
-脚本自动完成：检查 Node/DWS → 安装依赖 → 构建插件 bundle → 注册到 DSH Web profile → 启动本地后端（localhost:3400）。
+脚本自动完成：检查 Node/DWS → 安装依赖 → 构建插件 bundle → 注册到 DSH Web profile（`dsh.profile.bundles` + `file:` 依赖）→ 启动本地后端（localhost:3400）。
+
+> **插件注册机制**：`meeting-brain-dashboard` 是「客户端插件 + bundle patch」双角色 npm 包。
+> `package.json` 声明 `dsh.bundle.patch`（`cordis.patch.yml` 把插件行注册进 loader）和 `dsh.client`
+> （client-modules 扫描后自动挂载浏览器 half 到 `/plugins/meeting-brain-dashboard/client.js`）。
+> 包零生产依赖（后端依赖在 `devDependencies`，仓库根 `npm install` 安装），因此 profile 的
+> `pnpm install` 秒级完成，不会重复下载 transformers/onnxruntime。
 
 ## 使用
 

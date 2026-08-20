@@ -26,7 +26,8 @@
     }
   },
   "files": [
-    "lib"
+    "lib",
+    "cordis.patch.yml"
   ],
   "scripts": {
     "build": "node build.mjs",
@@ -38,12 +39,11 @@
   "engines": {
     "node": ">=22.5"
   },
-  "dependencies": {
-    "@huggingface/transformers": "^3.0.0",
-    "express": "^4.19.2"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "esbuild": "^0.24.0"
+    "@huggingface/transformers": "^3.0.0",
+    "esbuild": "^0.24.0",
+    "express": "^4.19.2"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",

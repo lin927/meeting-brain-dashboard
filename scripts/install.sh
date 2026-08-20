@@ -62,6 +62,7 @@ fi
 info "安装依赖（首次会下载约 24MB 本地嵌入模型，之后离线可用）…"
 cd "$REPO_DIR"
 if [ ! -d node_modules ]; then
+  # devDependencies 含后端运行时依赖（express + transformers），npm 会一并安装
   npm install --no-audit --no-fund
 fi
 info "构建 client 插件 bundle…"
@@ -73,6 +74,11 @@ if [ ! -f "$PROFILE_DIR/package.json" ]; then
 fi
 
 # 幂等：已在 dependencies 中则跳过
+# 注：meeting-brain-dashboard 是「客户端插件 + bundle patch」双角色包——
+#   - package.json 声明 dsh.bundle.patch（cordis.patch.yml 注册插件行到 loader）
+#   - package.json 声明 dsh.client（client-modules 扫描后挂载浏览器 half）
+#   - 零生产依赖：profile 的 pnpm install 不会重复下载 transformers/onnxruntime
+#   - pnpm 的 file: 依赖以硬链接同步整个仓库目录，cordis.patch.yml 自动带上
 if ! grep -q "\"$PACKAGE_NAME\"" "$PROFILE_DIR/package.json"; then
   info "注册插件到 DSH Web profile…"
   # 用 node 修改 package.json（安全 JSON 处理）
@@ -89,7 +95,7 @@ if (!pkg.dsh.profile.bundles.includes(pkgName)) pkg.dsh.profile.bundles.push(pkg
 fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n')
 console.log(`已注册 ${pkgName} → ${pkgPath}`)
 EOF
-  info "安装 profile 依赖（pnpm）…"
+  info "安装 profile 依赖（pnpm，仅插件本身，秒级完成）…"
   (cd "$PROFILE_DIR" && pnpm install --no-frozen-lockfile 2>/dev/null || npm install --no-audit --no-fund)
 else
   info "插件已在 profile 中注册，跳过"

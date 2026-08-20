@@ -54,6 +54,7 @@ if (-not (Get-Command dws -ErrorAction SilentlyContinue)) {
 Info '安装依赖（首次会下载约 24MB 本地嵌入模型，之后离线可用）…'
 Set-Location $RepoDir
 if (-not (Test-Path 'node_modules')) {
+    # devDependencies 含后端运行时依赖（express + transformers），npm 会一并安装
     npm install --no-audit --no-fund
 }
 Info '构建 client 插件 bundle…'
@@ -63,6 +64,11 @@ npm run build
 if (-not (Test-Path (Join-Path $ProfileDir 'package.json'))) {
     Die "未找到 DSH Web profile（$ProfileDir）。请先运行 DSH Web 一次后重试。"
 }
+# 注：meeting-brain-dashboard 是「客户端插件 + bundle patch」双角色包——
+#   - package.json 声明 dsh.bundle.patch（cordis.patch.yml 注册插件行到 loader）
+#   - package.json 声明 dsh.client（client-modules 扫描后挂载浏览器 half）
+#   - 零生产依赖：profile 的 pnpm install 不会重复下载 transformers/onnxruntime
+#   - pnpm 的 file: 依赖以硬链接同步整个仓库目录，cordis.patch.yml 自动带上
 $pkgJson = Get-Content (Join-Path $ProfileDir 'package.json') -Raw | ConvertFrom-Json
 if ($null -eq $pkgJson.dependencies -or -not $pkgJson.dependencies.$PackageName) {
     Info '注册插件到 DSH Web profile…'
@@ -75,7 +81,7 @@ if ($null -eq $pkgJson.dependencies -or -not $pkgJson.dependencies.$PackageName)
         $pkgJson.dsh.profile.bundles += $PackageName
     }
     $pkgJson | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $ProfileDir 'package.json') -Encoding UTF8
-    Info '安装 profile 依赖…'
+    Info '安装 profile 依赖（pnpm，仅插件本身，秒级完成）…'
     Push-Location $ProfileDir
     try { pnpm install --no-frozen-lockfile } catch { npm install --no-audit --no-fund }
     Pop-Location
