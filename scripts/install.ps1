@@ -17,6 +17,24 @@ function Info($m) { Write-Host "$Green[meeting-brain]$NC $m" }
 function Warn($m) { Write-Host "$Yellow[meeting-brain]$NC $m" }
 function Die($m) { Write-Host "$Red[meeting-brain]$NC $m" -ForegroundColor Red; exit 1 }
 
+# 可靠地执行 npm 全局安装：
+#  - npm 会把 deprecation 等警告写 stderr，PowerShell 5.1 在 $ErrorActionPreference='Stop'
+#    下会把 stderr 行当作 NativeCommandError 抛出，中断脚本。这里临时降级为 Continue，
+#    用 & 执行并显式读 $LASTEXITCODE 判断成败，警告只透传显示、不中断。
+#  - 全局安装后当前会话 PATH 不刷新，命令可能找不到；安装后重新合并 Machine+User PATH。
+function Install-NpmGlobal($pkg) {
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & npm install -g $pkg 2>&1 | Out-String | Write-Host
+    } finally {
+        $ErrorActionPreference = $oldEap
+    }
+    # 刷新 PATH（npm 全局 bin 可能不在当前会话 PATH 中）
+    $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+    return $LASTEXITCODE
+}
+
 $RepoDir = Split-Path -Parent $PSScriptRoot
 $DshHome = if ($env:DSH_HOME) { $env:DSH_HOME } else { Join-Path $HOME '.dsh' }
 $ProfileDir = Join-Path $DshHome 'profiles\web'
@@ -45,7 +63,7 @@ Info "Node.js $nodeVer OK"
 # ---------- 2. 钉钉 DWS CLI ----------
 if (-not (Get-Command dws -ErrorAction SilentlyContinue)) {
     Warn '未检测到钉钉 DWS CLI，尝试通过 npm 全局安装…'
-    $null = npm install -g dingtalk-workspace-cli 2>$null
+    Install-NpmGlobal 'dingtalk-workspace-cli' | Out-Null
     if (Get-Command dws -ErrorAction SilentlyContinue) {
         Info 'dws 已安装 OK'
     } else {
@@ -63,14 +81,12 @@ if (Get-Command dws -ErrorAction SilentlyContinue) {
     $authJson = (& dws auth status 2>$null | Out-String)
     if ($authJson -notmatch '"authenticated": true') {
         Warn '检测到 DWS 未登录或登录已过期，自动打开登录（浏览器弹出钉钉授权，请扫码/确认）…'
-        $null = & dws auth login
+        & dws auth login | Out-String | Write-Host
         if ($LASTEXITCODE -ne 0) {
             Warn 'dws auth login 未完成，可稍后手动执行: dws auth login'
         }
     } else {
-        $user = '已登录'
-        if ($authJson -match '"user_name": "([^"]*)"') { $user = $Matches[1] }
-        Info ("DWS 已登录（" + $user + "）")
+        Info 'DWS 已登录 OK'
     }
 }
 
@@ -79,17 +95,23 @@ Info '安装依赖（首次会下载约 24MB 本地嵌入模型，之后离线�
 Set-Location $RepoDir
 if (-not (Test-Path 'node_modules')) {
     # devDependencies 含后端运行时依赖（express + transformers），npm 会一并安装
-    npm install --no-audit --no-fund
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { npm install --no-audit --no-fund 2>&1 | Out-String | Write-Host } finally { $ErrorActionPreference = $oldEap }
+    if ($LASTEXITCODE -ne 0) { Die 'npm install 失败，请检查网络后重试。' }
 }
 Info '构建 client 插件 bundle…'
-npm run build
+$oldEap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try { npm run build 2>&1 | Out-String | Write-Host } finally { $ErrorActionPreference = $oldEap }
+if ($LASTEXITCODE -ne 0) { Die 'npm run build 失败。' }
 
 # ---------- 4. 检测并安装 DSH（DeepSeek Harness） ----------
 # 驾驶舱插件运行在 DSH Web 里；本仓库不包含 DSH 本体，只包含插件。
 # 步骤：装 dsh 全局命令 → 启动一次 dsh web 生成 profile → 本脚本继续注册插件。
 if (-not (Get-Command dsh -ErrorAction SilentlyContinue)) {
     Warn '未检测到 dsh 命令，尝试通过 npm 全局安装 @deepseek-ai/dsh…'
-    $null = npm install -g @deepseek-ai/dsh 2>$null
+    Install-NpmGlobal '@deepseek-ai/dsh' | Out-Null
     if (-not (Get-Command dsh -ErrorAction SilentlyContinue)) {
         Write-Host ''
         Die 'npm 安装 dsh 失败。请手动执行：npm install -g @deepseek-ai/dsh，然后重新运行本脚本。'
@@ -130,7 +152,15 @@ if ($null -eq $pkgJson.dependencies -or -not $pkgJson.dependencies.$PackageName)
     $pkgJson | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $ProfileDir 'package.json') -Encoding UTF8
     Info '安装 profile 依赖（pnpm，仅插件本身，秒级完成）…'
     Push-Location $ProfileDir
-    try { pnpm install --no-frozen-lockfile } catch { npm install --no-audit --no-fund }
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        if (Get-Command pnpm -ErrorAction SilentlyContinue) {
+            pnpm install --no-frozen-lockfile 2>&1 | Out-String | Write-Host
+        } else {
+            npm install --no-audit --no-fund 2>&1 | Out-String | Write-Host
+        }
+    } finally { $ErrorActionPreference = $oldEap }
     Pop-Location
 } else {
     Info '插件已在 profile 中注册，跳过'
