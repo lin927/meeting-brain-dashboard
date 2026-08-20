@@ -25,6 +25,16 @@ const HOST = process.env.HOST || '127.0.0.1'
 const app = express()
 app.use(express.json({ limit: '10mb' }))
 
+// CORS：浏览器页面（DSH Web, localhost:3080）fetch 本后端（localhost:3400）属跨域，
+// 必须放行。本服务仅监听 127.0.0.1，只服务本机页面，允许任意 Origin 无隐私风险。
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  if (req.method === 'OPTIONS') return res.sendStatus(204)
+  next()
+})
+
 const ok = (res, data) => res.json(data)
 const fail = (res, e) => res.status(500).json({ error: String((e && e.message) || e) })
 

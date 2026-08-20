@@ -296,7 +296,7 @@ function Dashboard() {
   React.useEffect(() => { try { const saved = sessionStorage.getItem(STORE); if (saved) { const s = JSON.parse(saved); if (s.tab) setTab(s.tab); if (s.selected) setSelected(s.selected) } } catch (e) {} }, [])
   React.useEffect(() => { try { sessionStorage.setItem(STORE, JSON.stringify({ tab, selected })) } catch (e) {} }, [tab, selected])
   const loadAll = React.useCallback(() => {
-    api('/api/overview').then((r) => r && r.error ? setError(r.error) : setOverview(r)).catch((e) => setError('后端未启动？' + String(e && e.message || e)))
+    api('/api/overview').then((r) => { if (r && r.error) setError(r.error); else { setOverview(r); setError(null) } }).catch((e) => setError('无法连接后端 ' + API() + '：' + String(e && e.message || e) + '。请确认本地后端已启动（node server/index.js）。'))
     api('/api/meetings').then((r) => { if (!(r && r.error)) setAllM(r) }).catch(() => {})
     api('/api/todos').then((r) => { if (!(r && r.error)) setTodos(r) }).catch(() => {})
   }, [])
@@ -314,7 +314,9 @@ function Dashboard() {
       else { setAnswer(r && r.answer || ''); setSearchHits((r && r.hits) || []); setTab('search') }
     }).catch((e) => { setAnswer('错误: ' + String(e && e.message || e)); setSearchHits([]) }).finally(() => setAsking(false))
   }
-  if (error) return React.createElement('div', { className: 'mbdg-empty' }, '加载失败: ' + error)
+  if (error) return React.createElement('div', { className: 'mbdg-empty' },
+    React.createElement('div', null, '加载失败: ' + error),
+    React.createElement('button', { className: 'mbdg-mini-btn', style: { marginTop: 10 }, onClick: () => { setError(null); loadAll() } }, '重试'))
   if (!overview) return React.createElement('div', { className: 'mbdg-empty' }, '加载中…')
   const stats = overview.stats || {}
   const thisWeek = overview.thisWeek || []
