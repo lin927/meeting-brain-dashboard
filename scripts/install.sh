@@ -52,21 +52,19 @@ info "Node.js $NODE_VER OK"
 # ---------- 2. 钉钉 DWS CLI ----------
 if ! command -v dws >/dev/null 2>&1; then
   warn "未检测到钉钉 DWS CLI，尝试通过 npm 全局安装…"
-  if npm install -g dingtalk-workspace-cli 2>/dev/null; then
-    info "dws 已安装: $(dws --version 2>/dev/null || echo 'OK')"
-  else
-    warn "npm 安装失败（可能网络或权限问题）。请手动安装："
-    warn "  方式 A：npm install -g dingtalk-workspace-cli"
-    warn "  方式 B：curl -fsSL https://dws.dingtalk.com/install | bash"
-    warn "  参考：https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli"
-    warn "安装完成后重新运行本脚本，并执行: dws login"
-  fi
+  npm install -g dingtalk-workspace-cli >/dev/null 2>&1 || true
 fi
 if command -v dws >/dev/null 2>&1; then
   info "DWS $(dws --version 2>/dev/null || echo '已安装') OK"
   if ! ls "$HOME/.dws/token.json" >/dev/null 2>&1; then
     warn "检测到 DWS 已安装但未登录，请执行: dws login"
   fi
+else
+  warn "npm 安装 dws 失败（可能网络或权限问题）。请手动安装："
+  warn "  方式 A：npm install -g dingtalk-workspace-cli"
+  warn "  方式 B：curl -fsSL https://dws.dingtalk.com/install | bash"
+  warn "  参考：https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli"
+  warn "安装完成后重新运行本脚本，并执行: dws login"
 fi
 
 # ---------- 3. 安装依赖 + 构建 ----------
@@ -84,12 +82,13 @@ npm run build
 # 步骤：装 dsh 全局命令 → 启动一次 dsh web 生成 profile → 本脚本继续注册插件。
 if ! command -v dsh >/dev/null 2>&1; then
   warn "未检测到 dsh 命令，尝试通过 npm 全局安装 @deepseek-ai/dsh…"
-  if npm install -g @deepseek-ai/dsh 2>/dev/null; then
-    info "dsh 已安装: $(dsh --version 2>/dev/null || echo 'OK')"
-  else
-    echo
-    die "npm 安装 dsh 失败。请手动执行：npm install -g @deepseek-ai/dsh，然后重新运行本脚本。"
-  fi
+  npm install -g @deepseek-ai/dsh >/dev/null 2>&1 || true
+fi
+if command -v dsh >/dev/null 2>&1; then
+  info "dsh 已安装: $(dsh --version 2>/dev/null || echo 'OK')"
+else
+  echo
+  die "npm 安装 dsh 失败。请手动执行：npm install -g @deepseek-ai/dsh，然后重新运行本脚本。"
 fi
 # DSH Web 首次启动后才会生成 profile（插件注册目标）
 if [ ! -f "$PROFILE_DIR/package.json" ]; then

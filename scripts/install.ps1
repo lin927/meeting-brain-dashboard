@@ -57,7 +57,8 @@ if (-not (Get-Command dws -ErrorAction SilentlyContinue)) {
     }
 }
 if (Get-Command dws -ErrorAction SilentlyContinue) {
-    Info 'DWS 已安装 OK'
+    $dwsVer = (& dws --version 2>$null)
+    Info ("DWS " + $(if ($dwsVer) { $dwsVer } else { '已安装' }) + " OK")
     if (-not (Test-Path (Join-Path $HOME '.dws\token.json'))) {
         Warn 'DWS 已安装但未登录，请执行: dws login'
     }
