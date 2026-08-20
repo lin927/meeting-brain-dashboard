@@ -364,7 +364,7 @@ function Dashboard() {
       React.createElement('div', { className: 'mbdg-card' }, React.createElement('div', { className: 'v' }, String(stats.actions || 0)), React.createElement('div', { className: 'k' }, '待办总数')),
       React.createElement('div', { className: 'mbdg-card' }, React.createElement('div', { className: 'v' }, String(stats.openActions || 0)), React.createElement('div', { className: 'k' }, '未完成待办'))),
     React.createElement('div', { className: 'mbdg-search' },
-      React.createElement('input', { className: 'mbdg-input', placeholder: '问一个问题，如：孟底沟项目有什么待办？', value: query, onChange: (e) => setQuery(e.target.value), onKeyDown: (e) => { if (e.key === 'Enter') doAsk() } }),
+      React.createElement('input', { className: 'mbdg-input', placeholder: '问一个问题，如：XX项目有什么待办？', value: query, onChange: (e) => setQuery(e.target.value), onKeyDown: (e) => { if (e.key === 'Enter') doAsk() } }),
       React.createElement('button', { className: 'mbdg-btn', onClick: doAsk, disabled: asking }, asking ? '检索中…' : '检索')),
     React.createElement('div', { className: 'mbdg-tabs' },
       answer ? React.createElement('div', { className: 'mbdg-tab' + (tab === 'search' ? ' on' : ''), onClick: () => setTab('search') }, '检索结果') : null,
