@@ -57,9 +57,8 @@ export function apply(ctx) {
       schema: {
         type: 'object',
         additionalProperties: false,
-        required: ['answer'],
         properties: {
-          answer: { type: 'string', description: '生成的答案（含 [会议标题] 来源引用）' },
+          answer: { type: 'string', required: true, description: '生成的答案（含 [会议标题] 来源引用）' },
           hits: { type: 'array', items: { type: 'object', additionalProperties: true } },
         },
       },
@@ -91,9 +90,8 @@ export function apply(ctx) {
       schema: {
         type: 'object',
         additionalProperties: false,
-        required: ['summary'],
         properties: {
-          summary: { type: 'string', description: '可读的待办汇总' },
+          summary: { type: 'string', required: true, description: '可读的待办汇总' },
           meetings: { type: 'array', items: { type: 'object', additionalProperties: true } },
         },
       },
@@ -135,9 +133,8 @@ export function apply(ctx) {
       schema: {
         type: 'object',
         additionalProperties: false,
-        required: ['summary'],
         properties: {
-          summary: { type: 'string', description: '按会议列出的检索结果' },
+          summary: { type: 'string', required: true, description: '按会议列出的检索结果' },
           meetings: { type: 'array', items: { type: 'object', additionalProperties: true } },
         },
       },
