@@ -140,13 +140,15 @@ Info ("DSH Web profile 已存在（" + $ProfileDir + "）")
 #   - pnpm 的 file: 依赖以硬链接同步整个仓库目录，cordis.patch.yml 自动带上
 # 修复 BOM：PowerShell 5.1 的 Set-Content -Encoding UTF8 会写入 BOM，
 # 而 DSH 的 readProfileManifest 用 JSON.parse 读 package.json，不接受 BOM。
-# 先剥离已存在的 BOM，再用无 BOM 的 UTF-8 写回。
+# 注意：不能用 ReadAllText 检测（它会自动剥离 BOM），必须读原始字节判断。
 $profilePkgPath = Join-Path $ProfileDir 'package.json'
-$profileRaw = [System.IO.File]::ReadAllText($profilePkgPath)
-if ($profileRaw.Length -gt 0 -and [int][char]$profileRaw[0] -eq 0xFEFF) {
-    $profileRaw = $profileRaw.Substring(1)
+$profileBytes = [System.IO.File]::ReadAllBytes($profilePkgPath)
+if ($profileBytes.Length -ge 3 -and $profileBytes[0] -eq 0xEF -and $profileBytes[1] -eq 0xBB -and $profileBytes[2] -eq 0xBF) {
+    $profileRaw = [System.Text.Encoding]::UTF8.GetString($profileBytes, 3, $profileBytes.Length - 3)
     [System.IO.File]::WriteAllText($profilePkgPath, $profileRaw, (New-Object System.Text.UTF8Encoding($false)))
     Warn '已修复 profile package.json 的 BOM 标记'
+} else {
+    $profileRaw = [System.Text.Encoding]::UTF8.GetString($profileBytes)
 }
 $pkgJson = $profileRaw | ConvertFrom-Json
 if ($null -eq $pkgJson.dependencies -or -not $pkgJson.dependencies.$PackageName) {
