@@ -39,10 +39,17 @@ await build({
   logLevel: 'info',
 });
 
-// Node half：与 DSH 官方 client 插件一致的简单空插件（浏览器 half 是全部行为）
-writeFileSync('lib/index.js', `// meeting-brain-dashboard node half — 纯 UI 插件，行为全在浏览器 half。
-function apply() {}
-export { apply };
-`);
+// Node half：host 端插件（注册会议工具），浏览器 half 是驾驶舱 UI
+await build({
+  entryPoints: ['src/host/index.js'],
+  bundle: true,
+  format: 'esm',
+  platform: 'node',
+  target: ['node20'],
+  outfile: 'lib/index.js',
+  sourcemap: false,
+  logLevel: 'info',
+  external: ['@deepseek-ai/cordis'],
+});
 
-console.log('✅ lib/client.js 与 lib/index.js 构建完成');
+console.log('✅ lib/client.js（驾驶舱 UI）与 lib/index.js（会议工具 host half）构建完成');
