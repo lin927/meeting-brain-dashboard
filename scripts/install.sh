@@ -68,10 +68,24 @@ fi
 info "构建 client 插件 bundle…"
 npm run build
 
-# ---------- 4. 注册到 DSH Web profile ----------
+# ---------- 4. 检测并引导安装 DSH（DeepSeek Harness） ----------
+# 驾驶舱插件运行在 DSH Web 里；本仓库不包含 DSH 本体，只包含插件。
+# 检测标志：DSH Web 首次启动后会生成 ~/.dsh/profiles/web/package.json。
 if [ ! -f "$PROFILE_DIR/package.json" ]; then
-  die "未找到 DSH Web profile（$PROFILE_DIR）。请先运行 DSH Web 一次后重试。"
+  echo
+  warn "未检测到 DSH（DeepSeek Harness）Web profile：$PROFILE_DIR"
+  warn "会议驾驶舱插件需要先有 DSH Web 才能注册。本仓库不含 DSH 本体，请先安装："
+  echo
+  warn "  【1】确保已安装 Node.js >= 22.5（本脚本前面已检查）"
+  warn "  【2】启动 DSH Web（首次会自动安装并生成 profile）："
+  warn "        npx @deepseek-ai/dsh web"
+  warn "      说明：首次运行 npx 会提示安装 @deepseek-ai/dsh 包，输入 y 确认。"
+  warn "  【3】确认浏览器打开 http://127.0.0.1:3080 看到 DSH 界面后，"
+  warn "        Ctrl+C 停止 DSH，再重新运行本脚本。"
+  echo
+  die "请先按上面步骤安装并启动一次 DSH Web，然后重新运行本脚本。"
 fi
+info "DSH Web profile 已存在（$PROFILE_DIR）"
 
 # 幂等：已在 dependencies 中则跳过
 # 注：meeting-brain-dashboard 是「客户端插件 + bundle patch」双角色包——

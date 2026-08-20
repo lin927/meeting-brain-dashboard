@@ -20,8 +20,13 @@
 
 1. **macOS**（Windows 见 `scripts/install.ps1`，钉钉 DWS 官方支持跨平台）
 2. **Node.js ≥ 22.5**（[nodejs.org](https://nodejs.org)）
-3. **钉钉 DWS CLI**：`curl -fsSL https://dws.dingtalk.com/install | bash`（参考 [dingtalk-workspace-cli](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli)），并 `dws login`（需账号能访问听记——自己 A1 卡录的 + 他人分享的）
-4. **DeepSeek API Key**：写入 `~/.dsh/.credentials.yaml` 的 `DEEPSEEK_API_KEY: sk-xxx`（AI 问答/深度总结用）
+3. **DSH（DeepSeek Harness）**：本仓库不含 DSH 本体，只含驾驶舱插件。安装脚本会自动检测并在缺失时给出指引；也可以先手动安装：
+   ```bash
+   npx @deepseek-ai/dsh web    # 首次运行自动安装 DSH 并启动 Web（127.0.0.1:3080）
+   ```
+   看到 DSH 界面后 Ctrl+C 停止，再继续下面的安装。
+4. **钉钉 DWS CLI**：`curl -fsSL https://dws.dingtalk.com/install | bash`（参考 [dingtalk-workspace-cli](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli)），并 `dws login`（需账号能访问听记——自己 A1 卡录的 + 他人分享的）
+5. **DeepSeek API Key**：写入 `~/.dsh/.credentials.yaml` 的 `DEEPSEEK_API_KEY: sk-xxx`（AI 问答/深度总结用）
 
 ## 安装（一键）
 
@@ -33,7 +38,9 @@ bash scripts/install.sh        # macOS
 # powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 ```
 
-脚本自动完成：检查 Node/DWS → 安装依赖 → 构建插件 bundle → 注册到 DSH Web profile（`dsh.profile.bundles` + `file:` 依赖）→ 启动本地后端（localhost:3400）。
+脚本自动完成：检查 Node/DWS → **检测 DSH（缺失时给出安装指引）** → 安装依赖 → 构建插件 bundle → 注册到 DSH Web profile（`dsh.profile.bundles` + `file:` 依赖）→ 启动本地后端（localhost:3400）。
+
+数据库无需准备：首次「立即同步」时自动创建 `~/.dsh/meetings/meeting-brain.sqlite` 并建表。
 
 > **插件注册机制**：`meeting-brain-dashboard` 是「客户端插件 + bundle patch」双角色 npm 包。
 > `package.json` 声明 `dsh.bundle.patch`（`cordis.patch.yml` 把插件行注册进 loader）和 `dsh.client`
