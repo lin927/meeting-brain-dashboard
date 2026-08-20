@@ -56,15 +56,20 @@ if ! command -v dws >/dev/null 2>&1; then
 fi
 if command -v dws >/dev/null 2>&1; then
   info "DWS $(dws --version 2>/dev/null || echo '已安装') OK"
-  if ! ls "$HOME/.dws/token.json" >/dev/null 2>&1; then
-    warn "检测到 DWS 已安装但未登录，请执行: dws login"
+  # 登录检测：dws auth status 返回 authenticated。未登录/过期则自动拉起 OAuth 扫码登录。
+  AUTH_STATUS="$(dws auth status 2>/dev/null || true)"
+  if ! echo "$AUTH_STATUS" | grep -q '"authenticated": true'; then
+    warn "检测到 DWS 未登录或登录已过期，自动打开登录（浏览器弹出钉钉授权，请扫码/确认）…"
+    dws auth login || warn "dws auth login 未完成，可稍后手动执行: dws auth login"
+  else
+    info "DWS 已登录（$(echo "$AUTH_STATUS" | grep -o '"user_name": "[^"]*"' | cut -d'"' -f4)）"
   fi
 else
   warn "npm 安装 dws 失败（可能网络或权限问题）。请手动安装："
   warn "  方式 A：npm install -g dingtalk-workspace-cli"
   warn "  方式 B：curl -fsSL https://dws.dingtalk.com/install | bash"
   warn "  参考：https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli"
-  warn "安装完成后重新运行本脚本，并执行: dws login"
+  warn "安装完成后重新运行本脚本，并执行: dws auth login"
 fi
 
 # ---------- 3. 安装依赖 + 构建 ----------
@@ -165,7 +170,7 @@ info "安装完成！"
 info "  1. 重启 DSH Web GUI（插件注册需重启生效）"
 info "  2. 打开对话界面 → 顶部「会议驾驶舱」tab"
 info "  3. 首次使用点击「立即同步」拉取你的钉钉听记"
-info "  4. 若未同步任何内容：确认已执行 dws login 且账号有听记权限"
+info "  4. 若未同步任何内容：确认已执行 dws auth login 且账号有听记权限"
 info "======================================================"
 echo
 info "常用命令："

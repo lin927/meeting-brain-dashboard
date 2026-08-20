@@ -25,7 +25,7 @@
    npx @deepseek-ai/dsh web    # 首次运行自动安装 DSH 并启动 Web（127.0.0.1:3080）
    ```
    看到 DSH 界面后 Ctrl+C 停止，再继续下面的安装。
-4. **钉钉 DWS CLI**：`curl -fsSL https://dws.dingtalk.com/install | bash`（参考 [dingtalk-workspace-cli](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli)），并 `dws login`（需账号能访问听记——自己 A1 卡录的 + 他人分享的）
+4. **钉钉 DWS CLI**：脚本会自动安装（`npm install -g dingtalk-workspace-cli`），并自动弹出 `dws auth login` 扫码登录（需账号能访问听记——自己 A1 卡录的 + 他人分享的）。也可手动执行 `dws auth login`
 5. **DeepSeek API Key**：写入 `~/.dsh/.credentials.yaml` 的 `DEEPSEEK_API_KEY: sk-xxx`（AI 问答/深度总结用）
 
 ## 安装（一键）
@@ -71,7 +71,7 @@ DSH Web GUI ◀──fetch /api/*── 本机后端
 
 ## 常见问题
 
-- **同步不到听记**：确认 `dws login` 已登录、账号有听记权限；查看后端日志 `tail -f ~/.dsh/meetings/backend.log`
+- **同步不到听记**：确认 `dws auth login` 已登录、账号有听记权限；查看后端日志 `tail -f ~/.dsh/meetings/backend.log`
 - **驾驶舱报「后端未启动」**：`node server/index.js` 手动启动，确认 3400 端口未被占用
 - **DeepSeek key 未生效**：`~/.dsh/.credentials.yaml` 需含 `DEEPSEEK_API_KEY`，改后重启后端
 - **首次同步较慢**：`dws +search` 全量扫描 + 逐条 `+detail`；之后增量很快

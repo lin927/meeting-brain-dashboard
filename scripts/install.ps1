@@ -53,14 +53,24 @@ if (-not (Get-Command dws -ErrorAction SilentlyContinue)) {
         Warn '  方式 A：npm install -g dingtalk-workspace-cli'
         Warn '  方式 B：官方安装脚本: curl -fsSL https://dws.dingtalk.com/install | bash'
         Warn '  参考：https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli'
-        Warn '安装完成后重新运行本脚本，并执行: dws login'
+        Warn '安装完成后重新运行本脚本，并执行: dws auth login'
     }
 }
 if (Get-Command dws -ErrorAction SilentlyContinue) {
     $dwsVer = (& dws --version 2>$null)
     Info ("DWS " + $(if ($dwsVer) { $dwsVer } else { '已安装' }) + " OK")
-    if (-not (Test-Path (Join-Path $HOME '.dws\token.json'))) {
-        Warn 'DWS 已安装但未登录，请执行: dws login'
+    # 登录检测：dws auth status 返回 authenticated。未登录/过期则自动拉起 OAuth 扫码登录。
+    $authJson = (& dws auth status 2>$null | Out-String)
+    if ($authJson -notmatch '"authenticated": true') {
+        Warn '检测到 DWS 未登录或登录已过期，自动打开登录（浏览器弹出钉钉授权，请扫码/确认）…'
+        $null = & dws auth login
+        if ($LASTEXITCODE -ne 0) {
+            Warn 'dws auth login 未完成，可稍后手动执行: dws auth login'
+        }
+    } else {
+        $user = '已登录'
+        if ($authJson -match '"user_name": "([^"]*)"') { $user = $Matches[1] }
+        Info ("DWS 已登录（" + $user + "）")
     }
 }
 
@@ -160,7 +170,7 @@ Info '安装完成！'
 Info '  1. 重启 DSH Web GUI（插件注册需重启生效）'
 Info '  2. 打开对话界面 → 顶部「会议驾驶舱」tab'
 Info '  3. 首次使用点击「立即同步」拉取你的钉钉听记'
-Info '  4. 若未同步任何内容：确认已执行 dws login 且账号有听记权限'
+Info '  4. 若未同步任何内容：确认已执行 dws auth login 且账号有听记权限'
 Info '======================================================'
 Write-Host ''
 Info '常用命令：'
