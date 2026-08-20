@@ -73,13 +73,13 @@ else
 fi
 
 # ---------- 3. 安装依赖 + 构建 ----------
+# 每次运行都强制 npm install + build，保证源码与构建产物一致
+# （lib/index.js、lib/client.js 是构建产物、不进 git，git pull 后必须重建）
 info "安装依赖（首次会下载约 24MB 本地嵌入模型，之后离线可用）…"
 cd "$REPO_DIR"
-if [ ! -d node_modules ]; then
-  # devDependencies 含后端运行时依赖（express + transformers），npm 会一并安装
-  npm install --no-audit --no-fund
-fi
-info "构建 client 插件 bundle…"
+# devDependencies 含后端运行时依赖（express + transformers），npm 会一并安装
+npm install --no-audit --no-fund
+info "构建插件 bundle（lib/client.js 驾驶舱 UI + lib/index.js 会议工具）…"
 npm run build
 
 # ---------- 4. 检测并安装 DSH（DeepSeek Harness） ----------

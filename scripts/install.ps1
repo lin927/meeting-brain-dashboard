@@ -91,16 +91,16 @@ if (Get-Command dws -ErrorAction SilentlyContinue) {
 }
 
 # ---------- 3. 安装依赖 + 构建 ----------
+# 每次运行都强制 npm install + build，保证源码与构建产物一致
+# （lib/index.js、lib/client.js 是构建产物、不进 git，git pull 后必须重建）
 Info '安装依赖（首次会下载约 24MB 本地嵌入模型，之后离线可用）…'
 Set-Location $RepoDir
-if (-not (Test-Path 'node_modules')) {
-    # devDependencies 含后端运行时依赖（express + transformers），npm 会一并安装
-    $oldEap = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try { npm install --no-audit --no-fund 2>&1 | Out-String | Write-Host } finally { $ErrorActionPreference = $oldEap }
-    if ($LASTEXITCODE -ne 0) { Die 'npm install 失败，请检查网络后重试。' }
-}
-Info '构建 client 插件 bundle…'
+# devDependencies 含后端运行时依赖（express + transformers），npm 会一并安装
+$oldEap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try { npm install --no-audit --no-fund 2>&1 | Out-String | Write-Host } finally { $ErrorActionPreference = $oldEap }
+if ($LASTEXITCODE -ne 0) { Die 'npm install 失败，请检查网络后重试。' }
+Info '构建插件 bundle（lib/client.js 驾驶舱 UI + lib/index.js 会议工具）…'
 $oldEap = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 try { npm run build 2>&1 | Out-String | Write-Host } finally { $ErrorActionPreference = $oldEap }
