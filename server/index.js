@@ -13,7 +13,7 @@ import path from 'node:path'
 import { ask, summarizeTranscript } from '../lib/ask.js'
 import { pull } from '../lib/pull.js'
 import { indexChunks } from '../lib/embed.js'
-import { overview, todosByRange } from '../lib/overview.js'
+import { overview, todosByRange, keywordSearch } from '../lib/overview.js'
 import {
   allMeetings, meetingDetail, projectTodos, todoTracking, backfillSummaries,
 } from '../lib/overview.js'
@@ -57,6 +57,14 @@ app.get('/api/todos', async (_req, res) => {
 
 app.post('/api/todos-range', async (req, res) => {
   try { ok(res, todosByRange(req.body && req.body.range)) } catch (e) { fail(res, e) }
+})
+
+app.get('/api/search-keywords', async (req, res) => {
+  try {
+    const kw = String(req.query.keyword || '').trim()
+    if (!kw) return fail(res, new Error('缺少 keyword'))
+    ok(res, keywordSearch(kw))
+  } catch (e) { fail(res, e) }
 })
 
 app.get('/api/detail', async (req, res) => {

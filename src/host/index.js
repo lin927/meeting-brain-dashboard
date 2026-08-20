@@ -117,4 +117,44 @@ export function apply(ctx) {
       return { summary: lines.join('\n'), meetings: r.meetings || [] }
     },
   })
+
+  tools.register({
+    name: 'meeting_brain_keywords',
+    description:
+      '关键词全文检索：找出明确包含指定词的会议（标题/摘要/逐字稿中直接出现该词）。'
+      + '适合「哪些会议提到了XX」「哪些会议讨论过XX」这类问题——结果一字不漏（按字面匹配），'
+      + '区别于语义检索（语义相近但不含原词）。',
+    parameters: {
+      keyword: {
+        type: 'string',
+        required: true,
+        description: '要检索的关键词，如：第一性原理',
+      },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['summary'],
+        properties: {
+          summary: { type: 'string', description: '按会议列出的检索结果' },
+          meetings: { type: 'array', items: { type: 'object', additionalProperties: true } },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: value.summary || '(无结果)' }],
+    },
+    async execute(args) {
+      const keyword = String(args.keyword || '').trim()
+      if (!keyword) throw new Error('缺少 keyword')
+      const r = await callBackend('/api/search-keywords?keyword=' + encodeURIComponent(keyword))
+      if (r && r.error) throw new Error(r.error)
+      const lines = [`关键词「${r.keyword}」命中 ${r.count} 场会议：`]
+      for (const m of r.meetings || []) {
+        const where = m.matchedIn === 'title' ? '标题' : m.matchedIn === 'summary' ? '摘要' : '逐字稿'
+        const d = m.time ? new Date(m.time).toLocaleDateString('zh-CN') : ''
+        lines.push(`· ${m.title}（${d}，命中${where}）`)
+      }
+      return { summary: lines.join('\n'), meetings: r.meetings || [] }
+    },
+  })
 }
