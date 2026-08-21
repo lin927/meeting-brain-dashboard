@@ -1,8 +1,8 @@
 /**
  * meeting-brain-dashboard 浏览器 half。
  *
- * 驾驶舱通过 fetch 调用本机后端（默认 http://127.0.0.1:3400，可用
- * window.MEETING_BRAIN_API 覆盖）。数据仍只在本机 SQLite。
+ * 驾驶舱通过 fetch 调用本机后端（默认端口 3400，被占用时顺延 3401-3404）。
+ * 数据仍只在本机 SQLite。
  *
  * 注意：静态 client 插件没有 React 闭包注入（那是动态插件 evaluator 特性），
  * React 必须通过 DSH 模块系统的 require 显式取得。
@@ -11,8 +11,8 @@
 /** DSH 客户端模块系统解析的外部依赖（bundle 中保留为 require("react")）。 */
 const React = require('react')
 
-/** 后端地址：默认本机 3400 端口，可在页面注入 window.MEETING_BRAIN_API 覆盖。 */
-const API = () => (typeof window !== 'undefined' && window.MEETING_BRAIN_API) || 'http://127.0.0.1:3400'
+/** 后端端口范围：与 host 托管逻辑一致（3400-3404 顺延）。 */
+const BACKEND_PORTS = [3400, 3401, 3402, 3403, 3404]
 
 /** 显式取浏览器全局 fetch；DSH 模块环境不保证裸标识符可见。 */
 const fetchGlobal = () => {
@@ -21,8 +21,46 @@ const fetchGlobal = () => {
   return w.fetch.bind(w)
 }
 
+/** 强制指定后端地址（页面注入 window.MEETING_BRAIN_API 时跳过探测）。 */
+const forcedApi = () => (typeof window !== 'undefined' && window.MEETING_BRAIN_API) || null
+
+/** 探测某端口是否为健康的 meeting-brain 后端。 */
+async function probeBackend(port, timeoutMs = 1500) {
+  const f = fetchGlobal()
+  try {
+    const res = await f(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(timeoutMs) })
+    if (!res.ok) return false
+    const j = await res.json()
+    return !!(j && j.ok && j.name === 'meeting-brain')
+  } catch {
+    return false
+  }
+}
+
+/** 已探测到的端口缓存。 */
+let cachedApi = null
+
+/** 解析当前可用的后端地址：缓存有效则复用，否则探测。 */
+async function resolveApi() {
+  const forced = forcedApi()
+  if (forced) return forced
+  if (cachedApi !== null) {
+    if (await probeBackend(cachedApi)) return cachedApi
+    cachedApi = null
+  }
+  for (const p of BACKEND_PORTS) {
+    if (await probeBackend(p)) {
+      cachedApi = `http://127.0.0.1:${p}`
+      return cachedApi
+    }
+  }
+  return null
+}
+
 async function api(path, body) {
-  const url = API() + path
+  const base = await resolveApi()
+  if (base === null) throw new Error('无法连接本地会议后端（3400-3404 均无响应），请确认后端已启动')
+  const url = base + path
   const res = await fetchGlobal()(url, body === undefined
     ? {}
     : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -309,7 +347,7 @@ function Dashboard() {
   React.useEffect(() => { try { const saved = sessionStorage.getItem(STORE); if (saved) { const s = JSON.parse(saved); if (s.tab) setTab(s.tab); if (s.selected) setSelected(s.selected) } } catch (e) {} }, [])
   React.useEffect(() => { try { sessionStorage.setItem(STORE, JSON.stringify({ tab, selected })) } catch (e) {} }, [tab, selected])
   const loadAll = React.useCallback(() => {
-    api('/api/overview').then((r) => { if (r && r.error) setError(r.error); else { setOverview(r); setError(null) } }).catch((e) => setError('无法连接后端 ' + API() + '：' + String(e && e.message || e) + '。请确认本地后端已启动（node server/index.js）。'))
+    api('/api/overview').then((r) => { if (r && r.error) setError(r.error); else { setOverview(r); setError(null) } }).catch((e) => setError('无法连接后端（3400-3404 无响应）：' + String(e && e.message || e) + '。请重启 DSH 或确认后端已启动。'))
     api('/api/meetings').then((r) => { if (!(r && r.error)) setAllM(r) }).catch(() => {})
     api('/api/todos').then((r) => { if (!(r && r.error)) setTodos(r) }).catch(() => {})
   }, [])
@@ -355,7 +393,7 @@ function Dashboard() {
           React.createElement('h2', { className: 'mbdg-h' }, '会议驾驶舱'),
           React.createElement('p', { className: 'mbdg-sub' }, overview.week ? ('本周窗口 ' + overview.week.label) : '')),
         React.createElement('div', { className: 'mbdg-syncbar' },
-          React.createElement('span', null, '后端: ' + API() + ' · 本地数据'),
+          React.createElement('span', null, '本地数据 · 端口探测 3400-3404'),
           React.createElement('button', { className: 'mbdg-syncbtn', onClick: doSync, disabled: syncing }, syncing ? '同步中…' : '立即同步'))),
       sync && sync.message ? React.createElement('div', { className: 'mbdg-sub', style: { marginTop: 4 } }, sync.message) : null),
     React.createElement('div', { className: 'mbdg-cards' },

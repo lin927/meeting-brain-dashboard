@@ -13,12 +13,111 @@
 // DSH 工具注册必须经过 defineTool 编译（parameters DSL → JSON Schema）。
 // @deepseek-ai/dsh-tools 由 DSH 运行时提供，构建时保持外部引用。
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-/** 后端地址：默认本机 3400，可用 MEETING_BRAIN_API 环境变量覆盖。 */
+/** 后端端口范围：3400 被占用时顺延探测。 */
+const BACKEND_PORTS = [3400, 3401, 3402, 3403, 3404]
+const __dirname = dirname(fileURLToPath(import.meta.url))
+
+/** 后端地址：可用 MEETING_BRAIN_API 环境变量强制指定（跳过探测）。 */
 const BACKEND = () => process.env.MEETING_BRAIN_API || 'http://127.0.0.1:3400'
 
+/** 探测某端口是否为「健康的 meeting-brain 后端」。 */
+async function probeBackend(port, timeoutMs = 2000) {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(timeoutMs) })
+    if (!res.ok) return false
+    const j = await res.json()
+    return !!(j && j.ok && j.name === 'meeting-brain')
+  } catch {
+    return false
+  }
+}
+
+/** 找到第一个健康后端端口；无则返回 null。 */
+async function findHealthyBackend() {
+  for (const p of BACKEND_PORTS) {
+    if (await probeBackend(p)) return p
+  }
+  return null
+}
+
+/** 找到第一个空闲端口（从 3400 起；被非会议程序占用的视为不可用跳过）。 */
+async function findFreePort() {
+  for (const p of BACKEND_PORTS) {
+    if (await probeBackend(p, 800)) continue // 已有健康后端，不用新起
+    try {
+      const res = await fetch(`http://127.0.0.1:${p}/`, { signal: AbortSignal.timeout(600) })
+      if (res.ok) continue // 有响应但不是会议后端 → 视为占用
+    } catch {
+      return p // 无法连接 → 空闲
+    }
+  }
+  return BACKEND_PORTS[0]
+}
+
+/** 启动后端进程；返回 child。 */
+function startBackend(port) {
+  const serverPath = join(__dirname, '..', 'server', 'index.js')
+  if (!existsSync(serverPath)) throw new Error(`后端脚本不存在: ${serverPath}`)
+  const child = spawn(process.execPath, [serverPath], {
+    env: { ...process.env, PORT: String(port), HOST: '127.0.0.1' },
+    stdio: 'ignore',
+  })
+  child.on('error', (e) => {
+    console.error('[meeting-brain] 后端启动失败:', e.message)
+  })
+  return child
+}
+
+/** 确保后端在运行（幂等）：已健康则复用，否则启动。返回实际端口。 */
+let managedChild = null
+async function ensureBackend() {
+  const existing = await findHealthyBackend()
+  if (existing !== null) return existing
+  const port = await findFreePort()
+  try {
+    managedChild = startBackend(port)
+    return port
+  } catch (e) {
+    console.error('[meeting-brain] 后端启动异常:', e.message)
+    return null
+  }
+}
+
+/** 看门狗：周期性健康检查，后端挂了自动重启（防抖）。 */
+let watchdogBusy = false
+async function watchdogTick() {
+  if (watchdogBusy) return
+  watchdogBusy = true
+  try {
+    await ensureBackend()
+  } finally {
+    watchdogBusy = false
+  }
+}
+
+/** 已探测到的后端端口（缓存，避免每次探测全部端口）。 */
+let cachedPort = null
+
+/** 获取当前可用的后端端口：缓存有效则复用，否则探测/启动。 */
+async function resolvePort() {
+  if (cachedPort !== null) {
+    if (await probeBackend(cachedPort, 800)) return cachedPort
+    cachedPort = null
+  }
+  const port = await ensureBackend()
+  if (port !== null) cachedPort = port
+  return port
+}
+
 async function callBackend(path, body) {
-  const url = BACKEND() + path
+  const port = await resolvePort()
+  if (port === null) throw new Error('meeting-brain 后端不可用（无法启动）')
+  const url = `http://127.0.0.1:${port}${path}`
   const res = await fetch(url, body === undefined
     ? {}
     : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -164,4 +263,21 @@ export function apply(ctx) {
       return { summary: lines.join('\n'), meetings: r.meetings || [] }
     },
   })
+
+  // ---- 后端托管：DSH 启动时确保后端在跑，周期看门狗，DSH 退出时回收 ----
+  // 首次启动即探测/拉起（DSH 重启后自动恢复后端，无需手动 node server/index.js）
+  ensureBackend().catch((e) => console.error('[meeting-brain] 初始后端启动失败:', e.message))
+  // 看门狗：每 30 秒健康检查，后端挂了自动重启（不依赖 DSH 重启）
+  const watchdog = ctx.interval(() => {
+    watchdogTick().catch((e) => console.error('[meeting-brain] 看门狗异常:', e.message))
+  }, 30 * 1000)
+  // DSH 退出/插件卸载时，回收自己拉起的后端进程
+  ctx.on('dispose', () => {
+    if (managedChild && managedChild.exitCode === null) {
+      try { managedChild.kill() } catch { /* 已退出 */ }
+    }
+    managedChild = null
+  })
+  // 看门狗定时器随 ctx.interval 自动清理，无需手动 dispose
+  void watchdog
 }
