@@ -39,9 +39,9 @@ function findRepoDir() {
   const candidates = [
     join(__dirname, '..'),                  // profile 副本或仓库内：node_modules/xxx/lib -> 包根
     join(__dirname, '..', '..'),            // 更上层兜底
-    join(os.homedir(), 'meeting-brain-dashboard'),
-    join(os.homedir(), 'code', 'meeting-brain-dashboard'),
-    join(os.homedir(), 'code', 'meeting-brain-dashboard', 'meeting-brain-dashboard'),
+    join(homedir(), 'meeting-brain-dashboard'),
+    join(homedir(), 'code', 'meeting-brain-dashboard'),
+    join(homedir(), 'code', 'meeting-brain-dashboard', 'meeting-brain-dashboard'),
   ]
   for (const c of candidates) {
     if (existsSync(join(c, 'server', 'index.js'))) return c
