@@ -15,12 +15,39 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /** 后端端口范围：3400 被占用时顺延探测。 */
 const BACKEND_PORTS = [3400, 3401, 3402, 3403, 3404]
 const __dirname = dirname(fileURLToPath(import.meta.url))
+
+/**
+ * 定位仓库目录（server/index.js 所在处）。
+ * 优先级：
+ *   1. MEETING_BRAIN_REPO 环境变量（安装脚本设置，最可靠）
+ *   2. 当前模块所在目录的父目录（profile 副本在 node_modules/.../lib，上一级是包目录；
+ *      若用户在仓库里运行则直接命中）
+ *   3. 常见安装路径：~/meeting-brain-dashboard、~/code/meeting-brain-dashboard
+ */
+function findRepoDir() {
+  if (process.env.MEETING_BRAIN_REPO && existsSync(join(process.env.MEETING_BRAIN_REPO, 'server', 'index.js'))) {
+    return process.env.MEETING_BRAIN_REPO
+  }
+  // 当前模块目录向上找：lib/../ 是包根；若包根下有 server/index.js 则直接是仓库
+  const candidates = [
+    join(__dirname, '..'),                  // profile 副本或仓库内：node_modules/xxx/lib -> 包根
+    join(__dirname, '..', '..'),            // 更上层兜底
+    join(os.homedir(), 'meeting-brain-dashboard'),
+    join(os.homedir(), 'code', 'meeting-brain-dashboard'),
+    join(os.homedir(), 'code', 'meeting-brain-dashboard', 'meeting-brain-dashboard'),
+  ]
+  for (const c of candidates) {
+    if (existsSync(join(c, 'server', 'index.js'))) return c
+  }
+  return null
+}
 
 /** 后端地址：可用 MEETING_BRAIN_API 环境变量强制指定（跳过探测）。 */
 const BACKEND = () => process.env.MEETING_BRAIN_API || 'http://127.0.0.1:3400'
@@ -61,8 +88,9 @@ async function findFreePort() {
 
 /** 启动后端进程；返回 child。 */
 function startBackend(port) {
-  const serverPath = join(__dirname, '..', 'server', 'index.js')
-  if (!existsSync(serverPath)) throw new Error(`后端脚本不存在: ${serverPath}`)
+  const repoDir = findRepoDir()
+  if (!repoDir) throw new Error('无法定位 meeting-brain 仓库目录（server/index.js），请设置 MEETING_BRAIN_REPO 环境变量')
+  const serverPath = join(repoDir, 'server', 'index.js')
   const child = spawn(process.execPath, [serverPath], {
     env: { ...process.env, PORT: String(port), HOST: '127.0.0.1' },
     stdio: 'ignore',
@@ -138,8 +166,8 @@ async function todos(range) {
 
 export const name = 'meeting-brain-tools'
 
-/** 所需服务：tools 注册表。 */
-export const inject = ['tools']
+/** 所需服务：tools 注册表 + timer（30s 后端看门狗 interval）。 */
+export const inject = ['tools', 'timer']
 
 /** 工具插件主体：注册会议问答与待办工具。 */
 export function apply(ctx) {

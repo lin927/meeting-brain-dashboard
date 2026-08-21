@@ -180,7 +180,16 @@ if ($null -eq $pkgJson.dependencies -or -not $pkgJson.dependencies.$PackageName)
     Info '插件已在 profile 中注册，跳过'
 }
 
-# ---------- 5. DeepSeek key 提示 ----------
+# ---------- 5. 设置 MEETING_BRAIN_REPO（插件托管后端时定位仓库目录） ----------
+try {
+    [Environment]::SetEnvironmentVariable('MEETING_BRAIN_REPO', $RepoDir, 'User')
+    $env:MEETING_BRAIN_REPO = $RepoDir
+    Info ("已设置 MEETING_BRAIN_REPO=" + $RepoDir)
+} catch {
+    Warn '设置 MEETING_BRAIN_REPO 失败（不影响本次安装，插件托管后端时需手动设置）'
+}
+
+# ---------- 6. DeepSeek key 提示 ----------
 $creds = Join-Path $DshHome '.credentials.yaml'
 if (-not (Test-Path $creds) -or -not (Select-String -Path $creds -Pattern 'DEEPSEEK_API_KEY' -Quiet)) {
     Warn "未检测到 DEEPSEEK_API_KEY（$creds）。"
@@ -188,7 +197,7 @@ if (-not (Test-Path $creds) -or -not (Select-String -Path $creds -Pattern 'DEEPS
     Warn '  DEEPSEEK_API_KEY: sk-xxxx'
 }
 
-# ---------- 6. 启动后端 ----------
+# ---------- 7. 启动后端 ----------
 try {
     $health = Invoke-RestMethod -Uri "http://127.0.0.1:$BackendPort/api/health" -TimeoutSec 2
     Info "后端已在运行: http://127.0.0.1:$BackendPort"

@@ -139,14 +139,30 @@ else
   info "插件已在 profile 中注册，跳过"
 fi
 
-# ---------- 5. DeepSeek key 提示 ----------
+# ---------- 5. 设置 MEETING_BRAIN_REPO（插件托管后端时定位仓库目录） ----------
+# 写入 shell 配置，让 DSH（dsh web 从终端启动）继承该环境变量
+SHELL_RC=""
+if [ -f "$HOME/.zshrc" ]; then SHELL_RC="$HOME/.zshrc";
+elif [ -f "$HOME/.bashrc" ]; then SHELL_RC="$HOME/.bashrc"; fi
+if [ -n "$SHELL_RC" ]; then
+  if ! grep -q "MEETING_BRAIN_REPO" "$SHELL_RC" 2>/dev/null; then
+    echo "export MEETING_BRAIN_REPO=\"$REPO_DIR\"" >> "$SHELL_RC"
+    info "已写入 MEETING_BRAIN_REPO=$REPO_DIR 到 $SHELL_RC（新终端生效）"
+  fi
+  export MEETING_BRAIN_REPO="$REPO_DIR"
+else
+  warn "未找到 shell 配置文件，本次会话设置 MEETING_BRAIN_REPO=$REPO_DIR（重启终端后需手动 export）"
+  export MEETING_BRAIN_REPO="$REPO_DIR"
+fi
+
+# ---------- 6. DeepSeek key 提示 ----------
 if [ ! -f "$DSH_HOME/.credentials.yaml" ] || ! grep -q "DEEPSEEK_API_KEY" "$DSH_HOME/.credentials.yaml"; then
   warn "未检测到 DEEPSEEK_API_KEY（$DSH_HOME/.credentials.yaml）。"
   warn "AI 问答/深度总结需要它。请手动添加："
   warn "  DEEPSEEK_API_KEY: sk-xxxx"
 fi
 
-# ---------- 6. 启动后端 ----------
+# ---------- 7. 启动后端 ----------
 if curl -s -m 2 "http://127.0.0.1:$BACKEND_PORT/api/health" >/dev/null 2>&1; then
   info "后端已在运行: http://127.0.0.1:$BACKEND_PORT"
 else

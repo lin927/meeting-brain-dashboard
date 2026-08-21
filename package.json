@@ -27,6 +27,7 @@
   },
   "files": [
     "lib",
+    "server",
     "cordis.patch.yml"
   ],
   "scripts": {
