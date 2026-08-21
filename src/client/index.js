@@ -21,6 +21,20 @@ const fetchGlobal = () => {
   return w.fetch.bind(w)
 }
 
+/** 复制兜底：navigator.clipboard 不可用时用临时 textarea 选中复制。 */
+function fallbackCopy(w, text) {
+  try {
+    const ta = w.document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    w.document.body.appendChild(ta)
+    ta.select()
+    w.document.execCommand('copy')
+    w.document.body.removeChild(ta)
+  } catch { /* 复制失败静默 */ }
+}
+
 /** 强制指定后端地址（页面注入 window.MEETING_BRAIN_API 时跳过探测）。 */
 const forcedApi = () => (typeof window !== 'undefined' && window.MEETING_BRAIN_API) || null
 
@@ -274,6 +288,19 @@ function MeetingDetail(props) {
       else setDeep(r && r.summary || '无结果')
     }).catch((e) => setDeep('失败: ' + String(e && e.message || e))).finally(() => setDeeping(false))
   }
+  const [copied, setCopied] = React.useState(false)
+  const copyDeep = (text) => {
+    const f = fetchGlobal()
+    const w = (typeof window !== 'undefined') ? window : globalThis
+    const plain = String(text || '')
+    const done = () => { setCopied(true); setTimeout(() => setCopied(false), 1500) }
+    if (w.navigator && w.navigator.clipboard && w.navigator.clipboard.writeText) {
+      w.navigator.clipboard.writeText(plain).then(done).catch(() => { fallbackCopy(w, plain); done() })
+    } else {
+      fallbackCopy(w, plain); done()
+    }
+    void f
+  }
   if (err) return React.createElement('div', { className: 'mbdg-empty' }, '加载失败: ' + err)
   if (!d) return React.createElement('div', { className: 'mbdg-empty' }, '加载中…')
   const tx = d.transcript || []
@@ -302,7 +329,11 @@ function MeetingDetail(props) {
       : null,
     sub === 'deep'
       ? React.createElement('div', null,
-          React.createElement('button', { className: 'mbdg-mini-btn primary', onClick: doDeep, disabled: deeping || !!deep }, deeping ? '生成中…' : (deep ? '重新生成' : '基于逐字稿生成')),
+          React.createElement('div', { style: { display: 'flex', gap: 8, alignItems: 'center' } },
+            React.createElement('button', { className: 'mbdg-mini-btn primary', onClick: doDeep, disabled: deeping || !!deep }, deeping ? '生成中…' : (deep ? '重新生成' : '基于逐字稿生成')),
+            deep && !deeping
+              ? React.createElement('button', { className: 'mbdg-mini-btn', onClick: () => copyDeep(deep) }, copied ? '已复制 ✓' : '复制总结')
+              : null),
           deep ? React.createElement('div', { className: 'mbdg-deep' }, React.createElement(Md, { text: deep })) : null)
       : null)
 }
