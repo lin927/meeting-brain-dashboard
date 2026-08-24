@@ -77,6 +77,22 @@ if (-not (Get-Command dws -ErrorAction SilentlyContinue)) {
 if (Get-Command dws -ErrorAction SilentlyContinue) {
     $dwsVer = (& dws --version 2>$null)
     Info ("DWS " + $(if ($dwsVer) { $dwsVer } else { '已安装' }) + " OK")
+    # 版本升级检查：有新版本时询问用户是否升级（dws 语法随版本变化，升级到最新可避免兼容问题）
+    $checkOut = (& dws upgrade --check 2>&1 | Out-String)
+    if ($checkOut -match '新版本可用') {
+        Write-Host ''
+        Warn '检测到 DWS 有新版本可用：'
+        $checkOut -split "`n" | Select-Object -First 12 | ForEach-Object { if ($_ -match '新版本可用|发布日期|v1\.0') { Warn $_ } }
+        Write-Host ''
+        $upgradeAns = Read-Host '[meeting-brain] 是否现在升级 DWS 到最新版本？(y/N)'
+        if ($upgradeAns -eq 'y' -or $upgradeAns -eq 'Y') {
+            Info '正在升级 DWS…'
+            & dws upgrade | Out-String | Write-Host
+            if ($LASTEXITCODE -ne 0) { Warn 'dws upgrade 未完成，可稍后手动执行: dws upgrade' }
+        } else {
+            Info "跳过升级（当前 $dwsVer）。若后续同步报命令错误，请先 dws upgrade。"
+        }
+    }
     # 登录检测：dws auth status 返回 authenticated。未登录/过期则自动拉起 OAuth 扫码登录。
     $authJson = (& dws auth status 2>$null | Out-String)
     if ($authJson -notmatch '"authenticated": true') {

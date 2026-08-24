@@ -56,6 +56,20 @@ if ! command -v dws >/dev/null 2>&1; then
 fi
 if command -v dws >/dev/null 2>&1; then
   info "DWS $(dws --version 2>/dev/null || echo '已安装') OK"
+  # 版本升级检查：有新版本时询问用户是否升级（dws 语法随版本变化，升级到最新可避免兼容问题）
+  if dws upgrade --check 2>&1 | grep -q "新版本可用"; then
+    echo
+    warn "检测到 DWS 有新版本可用："
+    dws upgrade --check 2>&1 | sed -n '1,12p'
+    echo
+    read -r -p "[meeting-brain] 是否现在升级 DWS 到最新版本？(y/N): " UPGRADE_ANS
+    if [ "$UPGRADE_ANS" = "y" ] || [ "$UPGRADE_ANS" = "Y" ]; then
+      info "正在升级 DWS…"
+      dws upgrade || warn "dws upgrade 未完成，可稍后手动执行: dws upgrade"
+    else
+      info "跳过升级（当前 $(dws --version 2>/dev/null)）。若后续同步报命令错误，请先 dws upgrade。"
+    fi
+  fi
   # 登录检测：dws auth status 返回 authenticated。未登录/过期则自动拉起 OAuth 扫码登录。
   AUTH_STATUS="$(dws auth status 2>/dev/null || true)"
   if ! echo "$AUTH_STATUS" | grep -q '"authenticated": true'; then
