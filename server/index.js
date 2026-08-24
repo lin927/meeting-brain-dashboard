@@ -85,8 +85,10 @@ app.get('/api/project', async (req, res) => {
 
 // ---------- 同步 ----------
 let syncing = false
-app.post('/api/sync', async (req, res) => {
-  if (syncing) return ok(res, { success: false, message: '正在同步中…请稍候', syncing: true })
+
+/** 执行一次增量同步（供手动按钮与自动定时器共用）。 */
+async function runSync() {
+  if (syncing) return { success: false, message: '正在同步中…请稍候', syncing: true }
   syncing = true
   const started = Date.now()
   try {
@@ -94,15 +96,29 @@ app.post('/api/sync', async (req, res) => {
     const syncedCount = await pull({ maxUuid: 300, quiet: true, skipExisting: true })
     const added = Math.max(0, allMeetings().length - before)
     try { await indexChunks() } catch (e) { console.error('indexChunks:', e.message) }
-    ok(res, {
+    return {
       success: true, added, syncedCount, elapsedMs: Date.now() - started,
       message: `同步完成，新增 ${added} 条听记，耗时 ${((Date.now() - started) / 1000).toFixed(1)}s`,
-    })
+    }
   } catch (e) {
-    fail(res, e)
+    return { success: false, message: `同步失败: ${String(e && e.message || e)}` }
   } finally {
     syncing = false
   }
+}
+
+// 自动同步：每 30 分钟增量拉取一次（同事分享的新听记会自动入库）
+const AUTO_SYNC_MS = Number(process.env.MEETING_BRAIN_AUTO_SYNC_MS) || 30 * 60 * 1000
+setInterval(() => {
+  runSync().then((r) => {
+    if (r.success && r.added > 0) console.log(`[auto-sync] ${r.message}`)
+  }).catch((e) => console.error('[auto-sync] 异常:', e.message))
+}, AUTO_SYNC_MS)
+console.log(`[auto-sync] 已启用：每 ${AUTO_SYNC_MS / 60000} 分钟自动同步`)
+
+app.post('/api/sync', async (req, res) => {
+  const r = await runSync()
+  ok(res, r)
 })
 
 // ---------- AI ----------
