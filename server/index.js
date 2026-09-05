@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
 import { ask, summarizeTranscript } from '../lib/ask.js'
+import { loadGlossary } from '../lib/glossary.js'
 import { pull } from '../lib/pull.js'
 import { indexChunks } from '../lib/embed.js'
 import { overview, todosByRange, keywordSearch } from '../lib/overview.js'
@@ -136,6 +137,7 @@ app.post('/api/summarize', async (req, res) => {
     const id = String((req.body && req.body.id) || '')
     if (!id) return fail(res, new Error('缺少 id'))
     const r = await summarizeTranscript({ taskUuid: id })
+    if (r && r.error) return fail(res, new Error(r.error))
     ok(res, { summary: r.summary || '', id })
   } catch (e) { fail(res, e) }
 })
@@ -148,6 +150,7 @@ app.post('/api/backfill-summaries', async (_req, res) => {
 const server = createServer(app)
 server.listen(PORT, HOST, () => {
   console.log(`✅ meeting-brain 后端已启动: http://${HOST}:${PORT}`)
+  try { loadGlossary(); } catch (e) { console.error('[glossary]', e.message); }
 })
 server.on('error', (e) => {
   console.error('❌ 启动失败:', e.message)

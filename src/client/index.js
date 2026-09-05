@@ -167,6 +167,9 @@ injectStyles(`
   .md-quote { border-left: 3px solid var(--dsw-border, #ddd); padding-left: 10px; color: var(--dsw-text-secondary, #666); margin: 6px 0; font-size: 13px; }
   .md-code { background: var(--dsw-bg-hover, #f2f2f2); border-radius: 4px; padding: 1px 5px; font-family: monospace; font-size: 12px; }
   .md-todo { font-size: 13px; padding: 4px 0; }
+  .mbdg-table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 8px 0; }
+  .mbdg-table th, .mbdg-table td { border: 1px solid var(--dsw-border, #eee); padding: 6px 8px; text-align: left; vertical-align: top; }
+  .mbdg-table th { background: var(--dsw-bg-hover, #f5f5f5); font-weight: 600; }
   .mbdg-mini-btn { margin-top: 6px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--dsw-border, #ddd); background: var(--dsw-bg-elevated, #fff); cursor: pointer; font-size: 12px; color: var(--dsw-text, #333); }
   .mbdg-mini-btn:hover { border-color: #2563eb; }
   .mbdg-mini-btn.primary { background: #2563eb; color: #fff; border-color: #2563eb; }
@@ -248,6 +251,27 @@ function Md(props) {
       blocks.push(React.createElement('div', { className: 'md-quote', key: 'q' + blocks.length }, ri(t.replace(/^>\s?/, ''), 'q' + blocks.length)))
       i++; continue
     }
+    if (t.startsWith('|')) {
+      const rows = []
+      while (i < lines.length && lines[i].trim().startsWith('|')) { rows.push(lines[i].trim()); i++ }
+      const splitRow = (r) => {
+        const parts = r.split('|')
+        if (parts[0] === '') parts.shift()
+        if (parts[parts.length - 1] === '') parts.pop()
+        return parts.map((c) => c.trim())
+      }
+      const isSep = (r) => splitRow(r).every((c) => /^:?-{2,}:?$/.test(c))
+      const parsed = rows.filter((r) => !isSep(r)).map(splitRow)
+      if (parsed.length > 0) {
+        const keyBase = 'tbl' + blocks.length
+        const head = parsed[0]
+        const body = parsed.slice(1)
+        blocks.push(React.createElement('table', { className: 'mbdg-table', key: keyBase },
+          React.createElement('thead', null, React.createElement('tr', null, head.map((c, ci) => React.createElement('th', { key: ci }, ri(c, keyBase + '-h' + ci))))),
+          React.createElement('tbody', null, body.map((row, riRow) => React.createElement('tr', { key: riRow }, row.map((c, ci) => React.createElement('td', { key: ci }, ri(c, keyBase + '-' + riRow + '-' + ci))))))))
+      }
+      continue
+    }
     if (/^[-*]\s/.test(t) || /^\d+\.\s/.test(t)) {
       blocks.push(React.createElement('div', { className: 'md-li', key: 'l' + blocks.length }, ri(t.replace(/^[-*]\s/, '• ').replace(/^\d+\.\s/, ''), 'l' + blocks.length)))
       i++; continue
@@ -276,19 +300,19 @@ function MeetingDetail(props) {
   const [showTx, setShowTx] = React.useState(false)
   const [deep, setDeep] = React.useState(null)
   const [deeping, setDeeping] = React.useState(false)
+  const [copied, setCopied] = React.useState(false)
   React.useEffect(() => {
     setD(null); setErr(null); setSub('record'); setShowTx(false); setDeep(null)
     api('/api/detail?id=' + encodeURIComponent(uuid)).then((r) => r && r.error ? setErr(r.error) : setD(r)).catch((e) => setErr(String(e && e.message || e)))
   }, [uuid])
   const doDeep = () => {
-    if (deeping || deep) return
-    setDeeping(true); setDeep('生成中…')
+    if (deeping) return
+    setDeeping(true); setDeep('生成中…'); setCopied(false)
     api('/api/summarize', { id: uuid }).then((r) => {
       if (r && r.error) setDeep('失败: ' + r.error)
       else setDeep(r && r.summary || '无结果')
     }).catch((e) => setDeep('失败: ' + String(e && e.message || e))).finally(() => setDeeping(false))
   }
-  const [copied, setCopied] = React.useState(false)
   const copyDeep = (text) => {
     const f = fetchGlobal()
     const w = (typeof window !== 'undefined') ? window : globalThis
@@ -330,7 +354,7 @@ function MeetingDetail(props) {
     sub === 'deep'
       ? React.createElement('div', null,
           React.createElement('div', { style: { display: 'flex', gap: 8, alignItems: 'center' } },
-            React.createElement('button', { className: 'mbdg-mini-btn primary', onClick: doDeep, disabled: deeping || !!deep }, deeping ? '生成中…' : (deep ? '重新生成' : '基于逐字稿生成')),
+            React.createElement('button', { className: 'mbdg-mini-btn primary', onClick: doDeep, disabled: deeping }, deeping ? '生成中…' : (deep && deep !== '生成中…' ? '重新生成' : '基于逐字稿生成')),
             deep && !deeping
               ? React.createElement('button', { className: 'mbdg-mini-btn', onClick: () => copyDeep(deep) }, copied ? '已复制 ✓' : '复制总结')
               : null),

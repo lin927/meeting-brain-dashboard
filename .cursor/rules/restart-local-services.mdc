@@ -1,0 +1,13 @@
+---
+description: 改完代码后自动编译并重启本机后端与 DSH Web，不要让用户手动启动
+alwaysApply: true
+---
+
+# 本地服务由 agent 重启
+
+改完 `src/`、`lib/`、`server/` 或需要用户看到最新驾驶舱/API 时：
+
+1. 在仓库根执行 `bash scripts/restart.sh`（脚本会 `npm run build`、重启 `localhost:3400` 后端、重启 `localhost:3080` 的 DSH Web）。
+2. 不要让用户自己执行 `node server/index.js`、`dsh web` 或 `pnpm dsh web`。
+3. 只有用户明确说「先别重启 / 不要动 DSH」时才跳过。
+4. 重启后用一句话告知后端与 DSH 已就绪，并提醒刷新浏览器。
