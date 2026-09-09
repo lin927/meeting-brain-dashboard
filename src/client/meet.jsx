@@ -1,0 +1,239 @@
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { api, qs } from './api.js'
+import {
+  MEET_PAGE, companyMark, fmtShort, groupMonths, lastSyncLabel, lastSyncTitle, srcLabel,
+} from './format.js'
+import { Md, useDebounced } from './ui.jsx'
+import { ImportSheet, MeetingDetail } from './meeting-detail.jsx'
+
+export function MeetPage(props) {
+  const { selected, setSelected, toast, goLedger } = props
+  const [items, setItems] = useState(null)
+  const [total, setTotal] = useState(0)
+  const [nextCursor, setNextCursor] = useState(null)
+  const [tags, setTags] = useState([])
+  const [err, setErr] = useState(null)
+  const [st, setSt] = useState(null)
+  const [syncing, setSyncing] = useState(false)
+  const [moreBusy, setMoreBusy] = useState(false)
+  const [meetFilter, setMeetFilter] = useState('all')
+  const [meetTag, setMeetTag] = useState('')
+  const [meetQuery, setMeetQuery] = useState('')
+  const [askQ, setAskQ] = useState('')
+  const [askA, setAskA] = useState('')
+  const [askHits, setAskHits] = useState([])
+  const [asking, setAsking] = useState(false)
+  const [showImport, setShowImport] = useState(false)
+  const [tick, setTick] = useState(0)
+  const qDebounced = useDebounced(meetQuery, 280)
+  const reqId = useRef(0)
+  const seenSyncAt = useRef(null)
+
+  const fetchPage = useCallback((opts = {}) => {
+    const id = ++reqId.current
+    const append = !!opts.append
+    const cursor = opts.cursor || ''
+    if (append) setMoreBusy(true)
+    return api('/api/meetings' + qs({
+      q: qDebounced,
+      tag: meetTag,
+      filter: meetFilter === 'company' ? 'company' : '',
+      cursor,
+      limit: MEET_PAGE,
+    })).then((r) => {
+      if (id !== reqId.current) return
+      const next = r.items || []
+      setErr(null)
+      setTotal(r.total || 0)
+      setNextCursor(r.nextCursor || null)
+      if (!append && r.tags) setTags(r.tags)
+      setItems((prev) => append ? (prev || []).concat(next) : next)
+    }).catch((er) => {
+      if (id !== reqId.current) return
+      if (!append) setErr(String(er && er.message || er))
+      else toast(String(er && er.message || er))
+    }).finally(() => { if (append) setMoreBusy(false) })
+  }, [qDebounced, meetTag, meetFilter])
+
+  useEffect(() => { fetchPage() }, [fetchPage, tick])
+  useEffect(() => {
+    let stop = false
+    const apply = (r, fromPoll) => {
+      if (stop || !r) return
+      setSt((prev) => {
+        if (!fromPoll || !prev) return r.dws ? r : { ...r, dws: (prev && prev.dws) || r.dws }
+        return { ...prev, ...r, dws: prev.dws || r.dws }
+      })
+      const at = r.last && r.last.at
+      if (!at) return
+      const prevAt = seenSyncAt.current
+      seenSyncAt.current = at
+      if (!fromPoll || prevAt == null || prevAt === at) return
+      if (r.last.success && r.last.added > 0) {
+        toast('听记已更新 · ' + (r.last.message || ('新增 ' + r.last.added + ' 条')))
+        setTick((n) => n + 1)
+      } else if (r.last.success === false) {
+        toast(r.last.message || '自动更新失败')
+      }
+    }
+    api('/api/sync-status').then((r) => apply(r, false)).catch(() => {})
+    const poll = () => api('/api/sync-status?meta=1').then((r) => apply(r, true)).catch(() => {})
+    const t = setInterval(poll, 20000)
+    const onVis = () => { if (document.visibilityState === 'visible') poll() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      stop = true
+      clearInterval(t)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [toast])
+
+  const doSync = () => {
+    if (syncing) return
+    setSyncing(true)
+    api('/api/sync', {}).then((r) => {
+      toast(r.message || '听记已更新')
+      if (r && r.at) seenSyncAt.current = r.at
+      setSt((prev) => ({ ...(prev || {}), last: r, syncing: false }))
+      setTick((n) => n + 1)
+    }).catch((er) => toast(String(er && er.message || er))).finally(() => setSyncing(false))
+  }
+  const doAsk = () => {
+    if (!askQ.trim() || asking) return
+    setAsking(true)
+    api('/api/ask', { query: askQ.trim() }).then((r) => {
+      if (r && r.error) { setAskA('错误: ' + r.error); setAskHits([]) }
+      else { setAskA(r && r.answer || ''); setAskHits((r && r.hits) || []) }
+    }).catch((er) => { setAskA('错误: ' + String(er && er.message || er)); setAskHits([]) }).finally(() => setAsking(false))
+  }
+
+  const pulling = syncing || !!(st && st.syncing)
+  if (err) {
+    return (
+      <div className="pane">
+        <p className="empty">{err}</p>
+        <button className="quiet" onClick={() => { setErr(null); fetchPage() }}>重试</button>
+      </div>
+    )
+  }
+  if (!items) return <div className="pane"><p className="empty">加载中…</p></div>
+
+  const currentId = selected || (items[0] && items[0].taskUuid)
+  const months = groupMonths(items)
+  const dws = (st && st.dws) || {}
+  const linkMap = askHits.reduce((m, h) => { if (h.title) m[h.title] = h.taskUuid; return m }, {})
+  const remain = Math.max(0, total - items.length)
+
+  return (
+    <div className="split-2">
+      <div className="pane">
+        <h1>会议</h1>
+        <div className="intake">
+          <span className="intake-st" title={lastSyncTitle(st) || undefined}>
+            {dws.authenticated
+              ? ('钉钉 · ' + (dws.user || '') + (lastSyncLabel(st) ? ' · ' + lastSyncLabel(st) : ' · 还没更新过'))
+              : '钉钉未登录'}
+          </span>
+          <div className="tools">
+            {dws.authenticated
+              ? <button className="quiet" onClick={doSync} disabled={pulling}>{pulling ? '更新中' : '更新'}</button>
+              : <button className="quiet" onClick={() => toast('请在本机终端执行 dws auth login，完成后点更新')}>登录</button>}
+            <button className="quiet" onClick={() => setShowImport(true)}>导入</button>
+          </div>
+        </div>
+        <div className="askbox">
+          <input
+            id="ask-q"
+            type="text"
+            placeholder="问这场会定了什么"
+            value={askQ}
+            onChange={(ev) => setAskQ(ev.target.value)}
+            onKeyDown={(ev) => { if (ev.key === 'Enter') doAsk() }}
+          />
+          <button className="quiet" onClick={doAsk} disabled={asking}>{asking ? '问…' : '问'}</button>
+        </div>
+        {askA ? <div className="ans"><Md text={askA} linkMap={linkMap} onMeetingClick={(id) => id && setSelected(id)} /></div> : null}
+        <div className="filters">
+          <button
+            className={'meet-filter' + (meetFilter === 'all' && !meetTag ? ' on' : '')}
+            onClick={() => { setMeetFilter('all'); setMeetTag('') }}
+          >全部</button>
+          <button
+            className={'meet-filter' + (meetFilter === 'company' ? ' on' : '')}
+            onClick={() => setMeetFilter('company')}
+          >已到公司</button>
+        </div>
+        <div className="tags" style={{ margin: '0 0 10px' }}>
+          {tags.map((t) => (
+            <button
+              type="button"
+              className={'tag' + (meetTag === t ? ' active' : '')}
+              key={t}
+              onClick={() => setMeetTag(meetTag === t ? '' : t)}
+            >{t}</button>
+          ))}
+        </div>
+        <input
+          type="text"
+          placeholder="过滤标题"
+          value={meetQuery}
+          onChange={(ev) => setMeetQuery(ev.target.value)}
+          style={{ marginBottom: 8 }}
+        />
+        {months.length
+          ? months.map((g) => (
+            <div key={g.key}>
+              <div className="month">{g.label}</div>
+              {g.items.map((x) => (
+                <div
+                  className={'m-item' + (x.taskUuid === currentId ? ' sel' : '')}
+                  key={x.taskUuid}
+                  onClick={() => setSelected(x.taskUuid)}
+                >
+                  <div className="t">{x.title}</div>
+                  <div className="meta">
+                    {[fmtShort(x.time), srcLabel(x.source), (x.tags || [])[0], companyMark(x)].filter(Boolean).join(' · ')}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))
+          : <p className="empty">没有会议</p>}
+        {nextCursor
+          ? (
+            <div className="more-row">
+              <button className="quiet" disabled={moreBusy} onClick={() => fetchPage({ append: true, cursor: nextCursor })}>
+                {moreBusy ? '加载中' : ('后面还有 ' + remain + ' 场')}
+              </button>
+            </div>
+          )
+          : null}
+      </div>
+      <div className="pane">
+        {currentId
+          ? (
+            <MeetingDetail
+              key={currentId}
+              uuid={currentId}
+              meetTag={meetTag}
+              toast={toast}
+              onTag={(t) => setMeetTag(meetTag === t ? '' : t)}
+              onChanged={() => setTick((n) => n + 1)}
+              onDeleted={() => { setSelected(''); setTick((n) => n + 1) }}
+              onJumpTodo={goLedger}
+            />
+          )
+          : <p className="empty">选一场会议</p>}
+      </div>
+      {showImport
+        ? (
+          <ImportSheet
+            toast={toast}
+            onClose={() => setShowImport(false)}
+            onImported={(id) => { setShowImport(false); setSelected(id); setTick((n) => n + 1) }}
+          />
+        )
+        : null}
+    </div>
+  )
+}

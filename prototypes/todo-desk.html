@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>会议助手 · 原型</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;700&family=Noto+Sans+SC:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --paper: #e8dfd0; --paper-2: #f3ece0; --ink: #1b1712; --ink-soft: #5c5348;
+      --rule: #cbbba3; --vermilion: #9c2b1a; --moss: #3d5a45; --panel: #faf6ee;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      background: radial-gradient(1100px 480px at 8% -8%, #f6efe3 0%, transparent 55%), var(--paper);
+      color: var(--ink); font-family: "Noto Sans SC", "PingFang SC", sans-serif;
+    }
+    .app { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+    header.top {
+      display: flex; align-items: baseline; gap: 22px; padding: 16px 28px 12px;
+      border-bottom: 1px solid var(--ink); background: var(--paper-2);
+    }
+    .brand { font-family: "Noto Serif SC", serif; font-weight: 700; font-size: 22px; letter-spacing: 0.14em; }
+    .brand small {
+      display: block; font-family: "IBM Plex Mono", monospace; font-size: 10px;
+      letter-spacing: 0.2em; color: var(--ink-soft); font-weight: 400; margin-top: 2px;
+    }
+    nav.main button {
+      appearance: none; border: 0; background: transparent; font: inherit; cursor: pointer;
+      color: var(--ink-soft); padding: 8px 12px 10px; position: relative;
+    }
+    nav.main button.on { color: var(--ink); font-weight: 600; }
+    nav.main button.on::after {
+      content: ""; position: absolute; left: 12px; right: 12px; bottom: 0; height: 2px; background: var(--vermilion);
+    }
+    .proto-note { margin-left: auto; font-size: 12px; color: var(--ink-soft); font-family: "IBM Plex Mono", monospace; }
+    main { flex: 1; min-height: 0; display: flex; }
+    .view { display: flex; flex: 1; min-height: 0; width: 100%; }
+    h1 { font-family: "Noto Serif SC", serif; font-size: 26px; font-weight: 600; margin: 0 0 6px; }
+    h2.detail-h { font-family: "Noto Serif SC", serif; font-size: 22px; margin: 0; }
+    .lede { font-size: 13px; color: var(--ink-soft); margin: 0 0 18px; }
+    input[type=text], input[type=datetime-local], input[type=password], textarea, select {
+      width: 100%; padding: 9px 11px; border: 1px solid var(--rule); background: #fffdf8; font: inherit;
+    }
+    textarea { min-height: 160px; resize: vertical; }
+    textarea.paste { min-height: 280px; font-size: 14px; line-height: 1.65; }
+    .primary { background: var(--ink); color: var(--paper-2); border: 1px solid var(--ink); padding: 7px 14px; font: inherit; cursor: pointer; }
+    .quiet { border: 0; background: transparent; color: var(--ink-soft); padding: 6px 8px; cursor: pointer; font: inherit; font-size: 13px; }
+    .quiet:hover { color: var(--ink); }
+    .quiet.danger:hover { color: var(--vermilion); }
+    .sync-pill {
+      border: 1px solid var(--ink); background: transparent; padding: 5px 12px;
+      font: inherit; font-size: 13px; cursor: pointer; margin-left: 4px;
+    }
+    .sync-pill.on { background: var(--ink); color: var(--paper-2); }
+    .linkish { color: var(--vermilion); cursor: pointer; background: none; border: 0; font: inherit; padding: 0; text-decoration: underline; text-underline-offset: 3px; }
+    .pane { overflow: auto; padding: 22px 24px; }
+    .split-2 { display: grid; grid-template-columns: minmax(280px, 4.5fr) minmax(360px, 6.5fr); width: 100%; min-height: 0; }
+    .split-2 > :first-child { border-right: 1px solid var(--rule); background: var(--panel); }
+    .month { font-size: 12px; color: var(--ink-soft); margin: 16px 0 6px; font-weight: 600; }
+    .m-item, .row { padding: 10px 8px; border-bottom: 1px dashed var(--rule); cursor: pointer; }
+    .m-item:hover, .m-item.sel, .row:hover, .row.sel { background: #efe6d6; }
+    .m-item .t, .row .title { font-weight: 500; }
+    .meta, .src { font-size: 12px; color: var(--ink-soft); margin-top: 3px; }
+    .meta { font-family: "IBM Plex Mono", monospace; }
+    .doc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+    .tools { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+    .meta-line { font-size: 13px; color: var(--ink-soft); margin: 6px 0 0; font-family: "IBM Plex Mono", monospace; }
+    .tabs { display: flex; gap: 18px; margin: 18px 0 12px; border-bottom: 1px solid var(--rule); }
+    .tab { padding: 0 0 8px; border: 0; background: none; cursor: pointer; font: inherit; color: var(--ink-soft); }
+    .tab.on { color: var(--ink); font-weight: 600; box-shadow: inset 0 -1px 0 var(--ink); }
+    .todo-strip { border-top: 1px solid var(--ink); padding-top: 14px; margin-top: 22px; }
+    .todo-strip h3 { font-family: "Noto Serif SC", serif; font-size: 15px; margin: 0 0 8px; }
+    .todo-mini { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; font-size: 13px; }
+    .ledger { width: 100%; display: grid; grid-template-columns: 168px 1fr 340px; min-height: 0; }
+    .settings { width: 100%; display: grid; grid-template-columns: 168px minmax(0, 1fr); min-height: 0; }
+    .cats { border-right: 1px solid var(--rule); background: #e4dac9; padding: 22px 14px; overflow: auto; }
+    .cats h2 { font-family: "Noto Serif SC", serif; font-size: 16px; margin: 0 0 12px; }
+    .cat { display: flex; justify-content: space-between; padding: 7px 8px; cursor: pointer; font-size: 14px; }
+    .cat.on { background: var(--ink); color: var(--paper-2); }
+    .cat .n { font-family: "IBM Plex Mono", monospace; font-size: 11px; opacity: 0.7; }
+    .row { display: grid; grid-template-columns: 10px 1fr auto; gap: 10px; align-items: start; }
+    .row.closed .title { text-decoration: line-through; color: var(--ink-soft); }
+    .dot { width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--vermilion); }
+    .dot.done { background: var(--moss); }
+    .who { font-size: 12px; color: var(--ink-soft); font-family: "IBM Plex Mono", monospace; white-space: nowrap; }
+    .origin { margin: 16px 0; font-size: 14px; line-height: 1.7; }
+    .origin .k { color: var(--ink-soft); font-size: 12px; }
+    .formcol { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+    .page { width: 100%; overflow: auto; padding: 28px 36px 56px; }
+    .page-inner { max-width: 640px; }
+    .askbox { display: flex; gap: 4px; margin: 14px 0 12px; }
+    .askbox input { flex: 1; }
+    .ans { font-size: 13px; line-height: 1.65; padding: 10px 0 14px; border-bottom: 1px dashed var(--rule); margin-bottom: 8px; white-space: pre-wrap; }
+    .tx { max-height: 280px; overflow: auto; white-space: pre-wrap; font-size: 12px; line-height: 1.7; background: #efe6d6; padding: 10px 12px; }
+    .filters { display: flex; gap: 6px; margin: 0 0 10px; }
+    .filters button {
+      border: 0; background: transparent; padding: 4px 2px; font: inherit; cursor: pointer; color: var(--ink-soft);
+    }
+    .filters button.on { color: var(--ink); font-weight: 600; }
+    .filter-line { font-size: 13px; margin-bottom: 12px; }
+    .toast {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: var(--ink); color: var(--paper-2); padding: 8px 14px; font-size: 13px; display: none; z-index: 9;
+    }
+    .empty, .hint { color: var(--ink-soft); font-size: 13px; }
+    .empty { padding: 20px 8px; }
+    .log { font-size: 13px; line-height: 1.8; }
+    .log div { display: flex; gap: 16px; }
+    .log time { font-family: "IBM Plex Mono", monospace; color: var(--ink-soft); width: 48px; flex-shrink: 0; }
+    .person { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px dashed var(--rule); }
+    .block { margin-bottom: 32px; }
+    .block h3 { font-family: "Noto Serif SC", serif; font-size: 17px; margin: 0 0 8px; }
+    .status { font-size: 14px; line-height: 1.7; margin: 0 0 16px; }
+    .field { margin-bottom: 12px; }
+    .field span { display: block; font-size: 12px; color: var(--ink-soft); margin-bottom: 4px; }
+    .intake {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      margin: 10px 0 14px; font-size: 13px; color: var(--ink-soft);
+    }
+    .intake .tools { gap: 0; }
+    .veil {
+      position: fixed; inset: 0; background: rgba(27, 23, 18, 0.35);
+      display: flex; align-items: center; justify-content: center; z-index: 8;
+    }
+    .sheet {
+      width: min(520px, calc(100% - 32px)); background: var(--paper-2);
+      border: 1px solid var(--ink); padding: 22px 24px 20px;
+    }
+    .sheet h2 { font-family: "Noto Serif SC", serif; font-size: 20px; margin: 0 0 6px; }
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
+    .tag {
+      border: 1px solid var(--rule); background: transparent; padding: 2px 8px;
+      font: inherit; font-size: 12px; cursor: pointer; color: var(--ink-soft);
+    }
+    .tag.on, .tag.active { border-color: var(--ink); color: var(--ink); }
+    .tag .x { margin-left: 4px; color: var(--ink-soft); }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div class="brand">会议助手<small>PROTOTYPE</small></div>
+      <nav class="main" id="nav"></nav>
+      <div class="proto-note">示意数据，不写入本机库</div>
+    </header>
+    <main id="main"></main>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script>
+    const NAV = [["meet","会议"],["ledger","待办"],["settings","设置"]];
+    let view = "meet";
+    let cats = ["项目", "部门", "公司", "其他"];
+    let catFilter = "all", stFilter = "open", setTab = "people";
+    let selectedTodo = 1, selectedMeet = "m1", meetSub = "record";
+    let meetFilter = "all", meetTag = "", meetQuery = "", askQ = "", askA = "";
+    let editingMeet = false, editingTodo = false, syncing = false, showImport = false;
+
+    const meetings = [
+      { id: "m1", title: "产品例会：会议助手独立与知识库发布", time: "2026-09-05 15:19", attendees: "徐林、尹光杰", source: "dingtalk", visibility: "private",
+        scope: "公司管理", tags: ["会议助手"],
+        summary: "先定标准、先出架构。会议助手从 DSH 拆出，公司库只收勾选同步的会议。\n\n1. 有听记权限即可把这场会同步到公司。\n2. 元数据按公司标准在后台装配。",
+        transcript: "【徐林】这个会议应用不要再挂在 DSH 上了，独立出来。\n【尹光杰】公司知识库用现成的 RAGFlow。\n【徐林】谁有听记权限，谁就能同步到公司。",
+        deep: "会议助手独立为本机服务；公司库只收同步过去的会议卡片。" },
+      { id: "m2", title: "孟底沟项目周例会", time: "2026-08-28 09:30", attendees: "项目组、徐林", source: "dingtalk", visibility: "marked",
+        scope: "项目", tags: ["孟底沟", "边坡"],
+        summary: "边坡监测周报口径本周五对齐。",
+        transcript: "【项目经理】周报口径还没对齐。\n【徐林】周五前定一版。", deep: "" },
+      { id: "m3", title: "部门经营分析会", time: "2026-08-21 14:00", attendees: "部门负责人", source: "dingtalk", visibility: "private",
+        scope: "部门", tags: ["经营"],
+        summary: "上月材料已补发。", transcript: "【负责人】材料补一下。", deep: "" },
+      { id: "m4", title: "客户现场沟通", time: "2026-09-05 16:01", attendees: "徐林", source: "import", visibility: "private",
+        scope: "个人", tags: [],
+        summary: "线下沟通纪要。会议助手独立于 DSH 运行。", transcript: "线下沟通纪要。\n会议助手独立于 DSH 运行。", deep: "" },
+    ];
+    let todos = [
+      { id: 1, title: "整理公司会议元数据字段表", owner: "徐林", cat: "公司", status: "open", created: "2026-09-05 16:02", origin: "手工", meeting: "产品例会：会议助手独立与知识库发布", meetingId: "m1", due: "本周" },
+      { id: 2, title: "提供 RAGFlow 接口", owner: "尹光杰", cat: "公司", status: "open", created: "2026-09-05 15:40", origin: "听记", meeting: "产品例会：会议助手独立与知识库发布", meetingId: "m1", dingId: "todo-88421", due: "" },
+      { id: 3, title: "孟底沟边坡周报口径对齐", owner: "项目组", cat: "项目", status: "open", created: "2026-08-28 10:12", origin: "总结", meeting: "孟底沟项目周例会", meetingId: "m2", due: "周五" },
+      { id: 4, title: "确认听记权限即可同步", owner: "徐林", cat: "部门", status: "open", created: "2026-09-05 15:41", origin: "听记", meeting: "产品例会：会议助手独立与知识库发布", meetingId: "m1", due: "" },
+      { id: 5, title: "对接公司会议库接口", owner: "尹光杰", cat: "项目", status: "open", created: "2026-08-21 15:02", origin: "手工", meeting: "部门经营分析会", meetingId: "m3", due: "09-10" },
+      { id: 6, title: "补发上月经营分析材料", owner: "行政", cat: "其他", status: "done", created: "2026-08-21 15:10", origin: "听记", meeting: "部门经营分析会", meetingId: "m3", closed: "2026-08-22 09:01", due: "" },
+    ];
+    const sync = {
+      dwsOk: true, dwsUser: "徐林", autoMin: 30,
+      events: [
+        { t: "15:50", text: "新增 2 条" },
+        { t: "15:20", text: "无新增" },
+        { t: "昨日", text: "新增 6 条" },
+      ],
+    };
+    const settings = {
+      people: [{ name: "徐林", aliases: "林哥" }, { name: "尹光杰", aliases: "尹工" }],
+      llmPreset: "deepseek", llmUrl: "https://api.deepseek.com", llmModel: "deepseek-chat", llmKey: "",
+      kbUrl: "", kbKey: "",
+      kbMgmt: "", kbOps: "", kbProject: "", kbDept: "",
+    };
+
+    function toast(t) {
+      const el = document.getElementById("toast");
+      el.textContent = t; el.style.display = "block";
+      setTimeout(() => { el.style.display = "none"; }, 1600);
+    }
+    function srcLabel(s) {
+      if (s === "import") return "导入";
+      if (s === "shared") return "分享";
+      return "听记";
+    }
+    function originLabel(o) { return { 听记: "钉钉听记", 总结: "会后总结", 手工: "手工" }[o] || o; }
+    function go(v, extra) {
+      view = v;
+      if (extra && extra.meet) selectedMeet = extra.meet;
+      if (extra && extra.todo) selectedTodo = extra.todo;
+      editingMeet = editingTodo = false;
+      render();
+    }
+    function meetingTodos(id) { return todos.filter((t) => t.meetingId === id); }
+    function allTags() {
+      const s = new Set();
+      meetings.forEach((m) => (m.tags || []).forEach((t) => s.add(t)));
+      return [...s];
+    }
+
+    function renderMeet() {
+      const list = meetings.filter((m) => {
+        if (meetFilter === "company" && m.visibility === "private") return false;
+        if (meetTag && !(m.tags || []).includes(meetTag)) return false;
+        if (meetQuery && !m.title.includes(meetQuery)) return false;
+        return true;
+      });
+      const m = list.find((x) => x.id === selectedMeet) || list[0];
+      if (m) selectedMeet = m.id;
+      const months = {};
+      list.forEach((x) => { const k = x.time.slice(0, 7); (months[k] = months[k] || []).push(x); });
+      const left = Object.keys(months).sort().reverse().map((k) => {
+        const [y, mo] = k.split("-");
+        const items = months[k].map((x) => `
+          <div class="m-item ${x.id === selectedMeet ? "sel" : ""}" data-id="${x.id}">
+            <div class="t">${x.title}</div>
+            <div class="meta">${x.time.slice(5)} · ${srcLabel(x.source)}${(x.tags || [])[0] ? " · " + x.tags[0] : ""}${x.visibility !== "private" ? " · 已到公司" + (x.scope && x.scope !== "个人" ? " · " + x.scope : "") : ""}</div>
+          </div>`).join("");
+        return `<div class="month">${y}年${Number(mo)}月</div>${items}`;
+      }).join("");
+      const linked = m ? meetingTodos(m.id) : [];
+      const synced = m && m.visibility !== "private";
+      let body = `<p class="empty">选一场会议</p>`;
+      if (m) {
+        const personal = m.scope === "个人";
+        const tools = editingMeet
+          ? `<button class="primary" id="e-save">保存</button><button class="quiet" id="e-cancel">取消</button>`
+          : `<button class="quiet" id="btn-edit-m">编辑</button>
+             ${personal
+               ? `<span class="meta" style="margin:0 0 0 8px">个人不同步</span>`
+               : (!m.scope
+                 ? `<span class="meta" style="margin:0 0 0 8px">先选类型</span>`
+                 : `<button class="sync-pill ${synced ? "on" : ""}" id="btn-sync-co">${synced ? "已到公司" : "同步到公司"}</button>`)}`;
+        const tagRow = editingMeet
+          ? `<div class="tags" style="margin-top:10px">
+               ${(m.tags || []).map((t) => `<button type="button" class="tag on" data-rm-tag="${t}">${t}<span class="x">×</span></button>`).join("")}
+               <button type="button" class="quiet" id="btn-add-tag">+ 标签</button>
+             </div>
+             <div class="field" style="margin-top:10px;max-width:200px">
+               <span>类型</span>
+               <select id="e-scope">${["个人", "公司管理", "公司运营", "项目", "部门"].map((s) => `<option ${m.scope === s ? "selected" : ""}>${s}</option>`).join("")}</select>
+             </div>`
+          : `<div class="tags">
+               <span class="tag" style="cursor:default">${m.scope || "未定类型"}</span>
+               ${(m.tags || []).map((t) => `<button type="button" class="tag ${meetTag === t ? "active" : ""}" data-tag="${t}">${t}</button>`).join("")}
+             </div>`;
+        body = `
+          <div class="doc-head">
+            <div style="min-width:0;flex:1">
+              ${editingMeet
+                ? `<input id="e-title" type="text" value="${m.title}" />
+                   <input id="e-att" type="text" style="margin-top:8px" value="${m.attendees}" />`
+                : `<h2 class="detail-h">${m.title}</h2>
+                   <p class="meta-line">${m.time} · ${m.attendees} · ${srcLabel(m.source)}${synced ? " · 已到公司" : ""}${personal ? " · 个人不同步" : ""}</p>`}
+              ${tagRow}
+            </div>
+            <div class="tools">${tools}</div>
+          </div>
+          <div class="tabs">
+            <button class="tab ${meetSub === "record" ? "on" : ""}" data-sub="record">记录</button>
+            <button class="tab ${meetSub === "transcript" ? "on" : ""}" data-sub="transcript">逐字稿</button>
+            <button class="tab ${meetSub === "deep" ? "on" : ""}" data-sub="deep">总结</button>
+          </div>
+          ${meetSub === "record" ? (editingMeet
+            ? `<textarea id="e-sum">${m.summary}</textarea>`
+            : `<div style="white-space:pre-wrap;font-size:14px;line-height:1.75">${m.summary}</div>`) : ""}
+          ${meetSub === "transcript" ? `<div class="tx">${m.transcript || "没有逐字稿"}</div>` : ""}
+          ${meetSub === "deep" ? `
+            <div>${m.deep ? `<div style="white-space:pre-wrap;font-size:14px;line-height:1.75;margin-bottom:10px">${m.deep}</div>` : `<p class="hint">还没有总结。</p>`}
+            <button class="quiet" id="btn-deep">${m.deep ? "重新生成" : "生成"}</button></div>` : ""}
+          <div class="todo-strip">
+            <h3>待办</h3>
+            ${linked.map((t) => `<div class="todo-mini"><span>${t.title}${t.status === "done" ? "（已关闭）" : ""}</span><button class="linkish" data-jump="${t.id}">待办</button></div>`).join("") || `<p class="hint">本场没有待办</p>`}
+            <button class="quiet" id="add-from-meet">+ 待办</button>
+          </div>`;
+      }
+      return `<div class="split-2">
+        <div class="pane">
+          <h1>会议</h1>
+          <div class="intake">
+            <span>${sync.dwsOk
+              ? `钉钉 · ${sync.dwsUser} · ${sync.events[0].t}`
+              : "钉钉未登录"}</span>
+            <div class="tools">
+              ${sync.dwsOk
+                ? `<button class="quiet" id="btn-sync">${syncing ? "更新中" : "更新"}</button>`
+                : `<button class="quiet" id="btn-dws">登录</button>`}
+              <button class="quiet" id="btn-open-import">导入</button>
+            </div>
+          </div>
+          <div class="askbox">
+            <input id="ask-q" type="text" placeholder="问这场会定了什么" value="${askQ}" />
+            <button class="quiet" id="ask-go">问</button>
+          </div>
+          ${askA ? `<div class="ans">${askA}</div>` : ""}
+          <div class="filters">
+            <button class="meet-filter ${meetFilter === "all" && !meetTag ? "on" : ""}" data-f="all">全部</button>
+            <button class="meet-filter ${meetFilter === "company" ? "on" : ""}" data-f="company">已到公司</button>
+          </div>
+          <div class="tags" style="margin:0 0 10px">
+            ${allTags().map((t) => `<button type="button" class="tag ${meetTag === t ? "active" : ""}" data-tag="${t}">${t}</button>`).join("")}
+          </div>
+          <input type="text" id="meet-q" placeholder="过滤标题" value="${meetQuery}" style="margin-bottom:8px" />
+          ${left || `<p class="empty">没有会议</p>`}
+        </div>
+        <div class="pane">${body}</div>
+      </div>`;
+    }
+
+    function renderLedger() {
+      const list = todos.filter((t) => {
+        if (catFilter !== "all" && t.cat !== catFilter) return false;
+        if (stFilter !== "all" && t.status !== stFilter) return false;
+        return true;
+      });
+      const t = todos.find((x) => x.id === selectedTodo);
+      const counts = Object.fromEntries(cats.map((c) => [c, todos.filter((x) => x.cat === c).length]));
+      const openN = todos.filter((x) => x.status === "open").length;
+      return `<div class="ledger">
+        <aside class="cats">
+          <h2>归类</h2>
+          <div class="cat ${catFilter === "all" ? "on" : ""}" data-cat="all">全部 <span class="n">${todos.length}</span></div>
+          ${cats.map((c) => `<div class="cat ${catFilter === c ? "on" : ""}" data-cat="${c}">${c} <span class="n">${counts[c] || 0}</span></div>`).join("")}
+          <button class="quiet" id="btn-cfg" style="margin-top:12px">+ 归类</button>
+        </aside>
+        <div class="pane">
+          <div class="doc-head">
+            <div><h1>待办</h1><p class="lede">${openN} 项未关闭</p></div>
+            <button class="quiet" id="btn-add">+ 待办</button>
+          </div>
+          <div class="filters">
+            <button data-st="open" class="${stFilter === "open" ? "on" : ""}">未关闭</button>
+            <button data-st="done" class="${stFilter === "done" ? "on" : ""}">已关闭</button>
+            <button data-st="all" class="${stFilter === "all" ? "on" : ""}">全部</button>
+          </div>
+          ${list.map((x) => `
+            <div class="row ${x.id === selectedTodo ? "sel" : ""} ${x.status === "done" ? "closed" : ""}" data-id="${x.id}">
+              <div class="dot ${x.status}"></div>
+              <div>
+                <div class="title">${x.title}</div>
+                <div class="src">${x.meeting}</div>
+              </div>
+              <div class="who">${x.owner}</div>
+            </div>`).join("") || `<p class="empty">没有待办</p>`}
+        </div>
+        <div class="pane">${t ? todoDetail(t) : `<p class="empty">选一条待办</p>`}</div>
+      </div>`;
+    }
+    function todoDetail(t) {
+      if (editingTodo) {
+        return `
+          <div class="formcol">
+            <input id="f-title" type="text" value="${t.title}" />
+            <input id="f-owner" type="text" value="${t.owner}" />
+            <select id="f-cat">${cats.map((c) => `<option ${c === t.cat ? "selected" : ""}>${c}</option>`).join("")}</select>
+            <input id="f-due" type="text" placeholder="时限，可空" value="${t.due || ""}" />
+            <div>
+              <button class="primary" id="op-save">保存</button>
+              <button class="quiet" id="op-cancel">取消</button>
+            </div>
+          </div>`;
+      }
+      return `
+        <div class="doc-head">
+          <h2 class="detail-h">${t.title}</h2>
+          <div class="tools">
+            <button class="quiet" id="op-edit">编辑</button>
+            ${t.status === "open"
+              ? `<button class="sync-pill" id="op-close">关闭</button>`
+              : `<button class="quiet" id="op-reopen">打开</button>`}
+          </div>
+        </div>
+        <p class="meta-line">${t.owner} · ${t.cat}${t.due ? " · " + t.due : ""}</p>
+        <div class="origin">
+          <div><span class="k">来源</span>　${originLabel(t.origin)} · ${t.created}</div>
+          <div><span class="k">会议</span>　<button class="linkish" id="to-meet">${t.meeting}</button></div>
+        </div>
+        <button class="quiet danger" id="op-del">删除</button>`;
+    }
+
+    function importOverlay() {
+      if (!showImport) return "";
+      return `<div class="veil" id="import-veil">
+        <div class="sheet" onclick="event.stopPropagation()">
+          <h2>导入</h2>
+          <p class="lede">不是钉钉听记的纪要，贴进来成为一场会议。以后飞书等来源会和钉钉一样走「更新」。</p>
+          <textarea class="paste" id="im-body" placeholder="粘贴纪要或转写"></textarea>
+          <div class="field" style="margin-top:12px"><span>标题</span><input id="im-title" type="text" placeholder="这场会叫什么" /></div>
+          <div class="field"><span>时间（可空）</span><input id="im-time" type="datetime-local" /></div>
+          <button class="primary" id="btn-import">导入</button>
+          <button class="quiet" id="btn-import-cancel">取消</button>
+        </div>
+      </div>`;
+    }
+
+    function renderSettings() {
+      const peoplePane = `
+        <h1>称呼</h1>
+        <p class="lede">总结时把口语落到姓名。项目名、用语以后也放这里。</p>
+        ${settings.people.map((p, i) => `
+          <div class="person">
+            <input type="text" value="${p.name}" data-p="${i}" data-k="name" />
+            <input type="text" value="${p.aliases}" data-p="${i}" data-k="aliases" placeholder="别名" />
+            <button class="quiet" data-rm="${i}">删除</button>
+          </div>`).join("")}
+        <button class="quiet" id="btn-add-person">+ 称呼</button>
+        <p class="status" style="margin-top:28px">总结用默认提炼规则。</p>`;
+      const llmPane = `
+        <h1>大模型</h1>
+        <p class="lede">问会议、生成总结时用。相关片段会发到这里。</p>
+        <div class="filters">
+          <button type="button" class="${settings.llmPreset === "deepseek" ? "on" : ""}" data-llm="deepseek">DeepSeek</button>
+          <button type="button" class="${settings.llmPreset === "ollama" ? "on" : ""}" data-llm="ollama">本机 Ollama</button>
+          <button type="button" class="${settings.llmPreset === "custom" ? "on" : ""}" data-llm="custom">自定义</button>
+        </div>
+        <div class="field"><span>地址</span><input id="llm-url" type="text" value="${settings.llmUrl}" /></div>
+        <div class="field"><span>模型名</span><input id="llm-model" type="text" value="${settings.llmModel}" /></div>
+        <div class="field"><span>密钥</span><input id="llm-key" type="password" placeholder="已保存则留空" value="${settings.llmKey}" /></div>
+        <button class="primary" id="btn-llm">保存</button>
+        <button class="quiet" id="btn-llm-test">测一下</button>`;
+      const kbPane = `
+        <h1>公司知识库</h1>
+        <p class="lede">一台 RAGFlow、四个库。项目会议、部门会议各进一个库，不同项目或部门用标签区分。</p>
+        <div class="field"><span>地址</span><input id="rf-url" type="text" placeholder="RAGFlow 地址" value="${settings.kbUrl}" /></div>
+        <div class="field"><span>密钥</span><input id="rf-key" type="password" placeholder="公司提供" value="${settings.kbKey}" /></div>
+        <div class="field"><span>公司管理会议 · dataset id</span><input id="kb-mgmt" type="text" value="${settings.kbMgmt}" /></div>
+        <div class="field"><span>公司运营会议 · dataset id</span><input id="kb-ops" type="text" value="${settings.kbOps}" /></div>
+        <div class="field"><span>项目会议 · dataset id</span><input id="kb-project" type="text" value="${settings.kbProject}" /></div>
+        <div class="field"><span>部门会议 · dataset id</span><input id="kb-dept" type="text" value="${settings.kbDept}" /></div>
+        <button class="primary" id="btn-rf">保存</button>
+        <button class="quiet" id="btn-kb-test">测一下</button>`;
+      const pane = setTab === "llm" ? llmPane : setTab === "kb" ? kbPane : peoplePane;
+      return `<div class="settings">
+        <aside class="cats">
+          <h2>设置</h2>
+          <div class="cat ${setTab === "people" ? "on" : ""}" data-set="people">称呼 <span class="n">${settings.people.length}</span></div>
+          <div class="cat ${setTab === "llm" ? "on" : ""}" data-set="llm">模型 <span class="n">${settings.llmModel || "未配置"}</span></div>
+          <div class="cat ${setTab === "kb" ? "on" : ""}" data-set="kb">公司 <span class="n">${settings.kbUrl ? "已填" : "未填"}</span></div>
+        </aside>
+        <div class="page"><div class="page-inner">${pane}</div></div>
+      </div>`;
+    }
+
+    function render() {
+      document.getElementById("nav").innerHTML = NAV.map(([id, label]) =>
+        `<button type="button" class="${view === id ? "on" : ""}" data-v="${id}">${label}</button>`).join("");
+      document.querySelectorAll("#nav button").forEach((b) => b.onclick = () => go(b.dataset.v));
+      const map = { meet: renderMeet, ledger: renderLedger, settings: renderSettings };
+      document.getElementById("main").innerHTML = `<section class="view">${map[view]()}</section>${importOverlay()}`;
+      bind();
+    }
+
+    function bind() {
+      document.querySelectorAll(".m-item").forEach((el) => el.onclick = () => {
+        selectedMeet = el.dataset.id; editingMeet = false; meetSub = "record"; render();
+      });
+      document.querySelectorAll(".meet-filter").forEach((el) => el.onclick = () => {
+        meetFilter = el.dataset.f;
+        if (meetFilter === "all") meetTag = "";
+        render();
+      });
+      document.querySelectorAll("[data-tag]").forEach((el) => el.onclick = (e) => {
+        e.stopPropagation();
+        meetTag = meetTag === el.dataset.tag ? "" : el.dataset.tag;
+        render();
+      });
+      document.querySelectorAll("[data-rm-tag]").forEach((el) => el.onclick = (e) => {
+        e.stopPropagation();
+        const m = meetings.find((x) => x.id === selectedMeet);
+        m.tags = (m.tags || []).filter((t) => t !== el.dataset.rmTag);
+        render();
+      });
+      const addTag = document.getElementById("btn-add-tag");
+      if (addTag) addTag.onclick = () => {
+        const name = prompt("标签");
+        if (!name) return;
+        const m = meetings.find((x) => x.id === selectedMeet);
+        m.tags = m.tags || [];
+        if (!m.tags.includes(name)) m.tags.push(name);
+        render();
+      };
+      const mq = document.getElementById("meet-q");
+      if (mq) mq.onchange = () => { meetQuery = mq.value; render(); };
+      const askBtn = document.getElementById("ask-go");
+      if (askBtn) askBtn.onclick = () => {
+        askQ = document.getElementById("ask-q").value;
+        askA = askQ.trim() ? "产品例会里定了：有听记权限就可以把这场会同步到公司。" : "";
+        render();
+      };
+      document.querySelectorAll(".tab[data-sub]").forEach((el) => el.onclick = () => { meetSub = el.dataset.sub; render(); });
+      const be = document.getElementById("btn-edit-m");
+      if (be) be.onclick = () => { editingMeet = true; meetSub = "record"; render(); };
+      const es = document.getElementById("e-save");
+      if (es) es.onclick = () => {
+        const m = meetings.find((x) => x.id === selectedMeet);
+        m.title = document.getElementById("e-title").value;
+        m.attendees = document.getElementById("e-att").value;
+        m.summary = document.getElementById("e-sum").value;
+        m.scope = document.getElementById("e-scope").value;
+        if (m.scope === "个人" && m.visibility !== "private") {
+          m.visibility = "private";
+          toast("已保存，个人会议已退出公司库");
+        } else {
+          toast("已保存");
+        }
+        editingMeet = false; render();
+      };
+      const ec = document.getElementById("e-cancel");
+      if (ec) ec.onclick = () => { editingMeet = false; render(); };
+      const bp = document.getElementById("btn-sync-co");
+      if (bp) bp.onclick = () => {
+        const m = meetings.find((x) => x.id === selectedMeet);
+        if (m.scope === "个人") { toast("个人会议不同步到公司"); return; }
+        if (!m.scope) { toast("先选类型再同步到公司"); return; }
+        m.visibility = m.visibility === "private" ? "marked" : "private";
+        toast(m.visibility === "private" ? "已取消同步" : "已同步到公司 · " + m.scope);
+        render();
+      };
+      const bd = document.getElementById("btn-deep");
+      if (bd) bd.onclick = () => {
+        meetings.find((x) => x.id === selectedMeet).deep = "根据逐字稿整理的结论与待办。";
+        toast("已生成"); render();
+      };
+      document.querySelectorAll("[data-jump]").forEach((b) => b.onclick = () => go("ledger", { todo: Number(b.dataset.jump) }));
+      const afm = document.getElementById("add-from-meet");
+      if (afm) afm.onclick = () => addTodo(selectedMeet);
+
+      document.querySelectorAll(".cat[data-cat]").forEach((el) => el.onclick = () => { catFilter = el.dataset.cat; render(); });
+      document.querySelectorAll("[data-set]").forEach((el) => el.onclick = () => { setTab = el.dataset.set; render(); });
+      document.querySelectorAll("[data-st]").forEach((el) => el.onclick = () => { stFilter = el.dataset.st; render(); });
+      document.querySelectorAll(".row[data-id]").forEach((el) => el.onclick = () => { selectedTodo = Number(el.dataset.id); editingTodo = false; render(); });
+      const tadd = document.getElementById("btn-add");
+      if (tadd) tadd.onclick = () => addTodo();
+      const cfg = document.getElementById("btn-cfg");
+      if (cfg) cfg.onclick = () => {
+        const name = prompt("归类名称"); if (!name || cats.includes(name)) return;
+        cats.push(name); render();
+      };
+      const tm = document.getElementById("to-meet");
+      if (tm) tm.onclick = () => go("meet", { meet: todos.find((x) => x.id === selectedTodo).meetingId });
+      const ted = document.getElementById("op-edit");
+      if (ted) ted.onclick = () => { editingTodo = true; render(); };
+      const tcl = document.getElementById("op-close");
+      if (tcl) tcl.onclick = () => {
+        const t = todos.find((x) => x.id === selectedTodo);
+        t.status = "done"; t.closed = "2026-09-05 21:00"; toast("已关闭"); render();
+      };
+      const tro = document.getElementById("op-reopen");
+      if (tro) tro.onclick = () => {
+        todos.find((x) => x.id === selectedTodo).status = "open"; toast("已打开"); render();
+      };
+      const tdel = document.getElementById("op-del");
+      if (tdel) tdel.onclick = () => {
+        if (!confirm("删除这条待办？")) return;
+        todos = todos.filter((x) => x.id !== selectedTodo);
+        selectedTodo = todos[0] ? todos[0].id : 0;
+        toast("已删除"); render();
+      };
+      const tsv = document.getElementById("op-save");
+      if (tsv) tsv.onclick = () => {
+        const t = todos.find((x) => x.id === selectedTodo);
+        t.title = document.getElementById("f-title").value;
+        t.owner = document.getElementById("f-owner").value;
+        t.cat = document.getElementById("f-cat").value;
+        t.due = document.getElementById("f-due").value;
+        editingTodo = false; toast("已保存"); render();
+      };
+      const tca = document.getElementById("op-cancel");
+      if (tca) tca.onclick = () => { editingTodo = false; render(); };
+
+      const openIm = document.getElementById("btn-open-import");
+      if (openIm) openIm.onclick = () => { showImport = true; render(); };
+      const veil = document.getElementById("import-veil");
+      if (veil) veil.onclick = () => { showImport = false; render(); };
+      const ic = document.getElementById("btn-import-cancel");
+      if (ic) ic.onclick = (e) => { e.stopPropagation(); showImport = false; render(); };
+      const bs = document.getElementById("btn-sync");
+      if (bs) bs.onclick = () => {
+        if (syncing) return;
+        syncing = true; render();
+        setTimeout(() => {
+          syncing = false;
+          sync.events.unshift({ t: "21:20", text: "无新增" });
+          toast("听记已更新"); render();
+        }, 700);
+      };
+      const dws = document.getElementById("btn-dws");
+      if (dws) dws.onclick = () => { sync.dwsOk = true; toast("已登录"); render(); };
+
+      const bi = document.getElementById("btn-import");
+      if (bi) bi.onclick = (e) => {
+        e.stopPropagation();
+        const title = document.getElementById("im-title").value.trim();
+        const body = document.getElementById("im-body").value.trim();
+        if (!body) { toast("先贴正文"); return; }
+        const id = "m" + Date.now();
+        meetings.unshift({
+          id, title: title || "未命名会议", time: "2026-09-05 21:20", attendees: "",
+          source: "import", visibility: "private", scope: "个人", tags: [],
+          summary: body.slice(0, 600), transcript: body, deep: "",
+        });
+        toast("已导入"); showImport = false; go("meet", { meet: id });
+      };
+
+      const ap = document.getElementById("btn-add-person");
+      if (ap) ap.onclick = () => { settings.people.push({ name: "", aliases: "" }); render(); };
+      document.querySelectorAll("[data-p]").forEach((el) => {
+        el.onchange = () => { settings.people[el.dataset.p][el.dataset.k] = el.value; };
+      });
+      document.querySelectorAll("[data-rm]").forEach((el) => el.onclick = () => {
+        settings.people.splice(Number(el.dataset.rm), 1); render();
+      });
+      const rf = document.getElementById("btn-rf");
+      if (rf) rf.onclick = () => {
+        settings.kbUrl = document.getElementById("rf-url").value;
+        settings.kbKey = document.getElementById("rf-key").value;
+        settings.kbMgmt = document.getElementById("kb-mgmt").value;
+        settings.kbOps = document.getElementById("kb-ops").value;
+        settings.kbProject = document.getElementById("kb-project").value;
+        settings.kbDept = document.getElementById("kb-dept").value;
+        toast("已保存");
+      };
+      const kbTest = document.getElementById("btn-kb-test");
+      if (kbTest) kbTest.onclick = () => toast(settings.kbUrl ? "可用（示意）" : "先填地址");
+      const llmPresets = { deepseek: ["https://api.deepseek.com", "deepseek-chat"], ollama: ["http://127.0.0.1:11434/v1", "qwen2.5:7b"], custom: [settings.llmUrl, settings.llmModel] };
+      document.querySelectorAll("[data-llm]").forEach((el) => el.onclick = () => {
+        settings.llmPreset = el.dataset.llm;
+        const p = llmPresets[settings.llmPreset];
+        if (p && settings.llmPreset !== "custom") { settings.llmUrl = p[0]; settings.llmModel = p[1]; }
+        render();
+      });
+      const bl = document.getElementById("btn-llm");
+      if (bl) bl.onclick = () => {
+        settings.llmUrl = document.getElementById("llm-url").value;
+        settings.llmModel = document.getElementById("llm-model").value;
+        settings.llmKey = document.getElementById("llm-key").value;
+        toast("已保存");
+      };
+      const lt = document.getElementById("btn-llm-test");
+      if (lt) lt.onclick = () => toast(settings.llmModel ? "可用（示意）" : "先填模型名");
+    }
+
+    function addTodo(preset) {
+      const title = prompt("待办"); if (!title) return;
+      const m = meetings.find((x) => x.id === preset) || meetings.find((x) => x.id === selectedMeet) || meetings[0];
+      const id = Math.max(0, ...todos.map((t) => t.id)) + 1;
+      todos.unshift({
+        id, title, owner: "待定", cat: "其他", status: "open", created: "2026-09-05 21:20",
+        origin: "手工", meeting: m.title, meetingId: m.id, due: "",
+      });
+      selectedTodo = id; stFilter = "open"; go("ledger", { todo: id });
+    }
+
+    render();
+  </script>
+</body>
+</html>

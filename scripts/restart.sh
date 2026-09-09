@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 编译驾驶舱插件，并重启本机后端 + DSH Web。
-# 改完 src/client、server、lib 后由 agent 自动执行，无需手动启动。
+# 编译独立界面与 DSH 会议工具，并重启本机服务（:3400）+ DSH Web。
+# 改完 src/、server、lib 后由 agent 自动执行，无需手动启动。
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -82,7 +82,7 @@ PY
 }
 
 # ---------- 编译 ----------
-info "编译 client / host bundle…"
+info "编译独立界面 / host 工具…"
 cd "$REPO_DIR"
 npm run build
 
@@ -113,4 +113,4 @@ fi
 start_daemon "$LOG_DIR/dsh-web.pid" "$LOG_DIR/dsh-web.log" "$DSH_HARNESS" "$PNPM_BIN" dsh web >/dev/null
 wait_http "http://127.0.0.1:$DSH_PORT/"
 info "DSH Web 已就绪"
-info "完成：后端 :$BACKEND_PORT  ·  DSH :$DSH_PORT  ·  请刷新浏览器"
+info "完成：会议助手 http://127.0.0.1:$BACKEND_PORT  ·  DSH 工具 :$DSH_PORT  ·  请刷新浏览器"

@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>会议助手</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;700&family=Noto+Sans+SC:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --paper: #e8dfd0; --paper-2: #f3ece0; --ink: #1b1712; --ink-soft: #5c5348;
+      --rule: #cbbba3; --vermilion: #9c2b1a; --moss: #3d5a45; --panel: #faf6ee;
+    }
+    * { box-sizing: border-box; }
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--rule) transparent;
+    }
+    *::-webkit-scrollbar { width: 7px; height: 7px; }
+    *::-webkit-scrollbar-track { background: transparent; }
+    *::-webkit-scrollbar-thumb {
+      background: var(--rule);
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+    *::-webkit-scrollbar-thumb:hover { background: var(--ink-soft); background-clip: padding-box; }
+    *::-webkit-scrollbar-corner { background: transparent; }
+    html, body, #root { height: 100%; margin: 0; }
+    body {
+      background: radial-gradient(1100px 480px at 8% -8%, #f6efe3 0%, transparent 55%), var(--paper);
+      color: var(--ink); font-family: "Noto Sans SC", "PingFang SC", sans-serif;
+    }
+    .app { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+    header.top {
+      display: flex; align-items: baseline; gap: 22px; padding: 16px 28px 12px;
+      border-bottom: 1px solid var(--ink); background: var(--paper-2);
+    }
+    .brand { font-family: "Noto Serif SC", serif; font-weight: 700; font-size: 22px; letter-spacing: 0.14em; }
+    .brand small {
+      display: block; font-family: "IBM Plex Mono", monospace; font-size: 10px;
+      letter-spacing: 0.2em; color: var(--ink-soft); font-weight: 400; margin-top: 2px;
+    }
+    nav.main button {
+      appearance: none; border: 0; background: transparent; font: inherit; cursor: pointer;
+      color: var(--ink-soft); padding: 8px 12px 10px; position: relative;
+    }
+    nav.main button.on { color: var(--ink); font-weight: 600; }
+    nav.main button.on::after {
+      content: ""; position: absolute; left: 12px; right: 12px; bottom: 0; height: 2px; background: var(--vermilion);
+    }
+    main { flex: 1; min-height: 0; display: flex; }
+    .view { display: flex; flex: 1; min-height: 0; width: 100%; }
+    .view-off { display: none !important; }
+    h1 { font-family: "Noto Serif SC", serif; font-size: 26px; font-weight: 600; margin: 0 0 6px; }
+    h2.detail-h { font-family: "Noto Serif SC", serif; font-size: 22px; margin: 0; }
+    .lede { font-size: 13px; color: var(--ink-soft); margin: 0 0 18px; }
+    input[type=text], input[type=date], input[type=datetime-local], input[type=password], textarea, select {
+      width: 100%; padding: 9px 11px; border: 1px solid var(--rule); background: #fffdf8; font: inherit;
+      color-scheme: light;
+    }
+    textarea { min-height: 160px; resize: vertical; }
+    textarea.paste { min-height: 280px; font-size: 14px; line-height: 1.65; }
+    .primary { background: var(--ink); color: var(--paper-2); border: 1px solid var(--ink); padding: 7px 14px; font: inherit; cursor: pointer; }
+    .primary:disabled, .quiet:disabled { opacity: 0.55; cursor: default; }
+    .quiet { border: 0; background: transparent; color: var(--ink-soft); padding: 6px 8px; cursor: pointer; font: inherit; font-size: 13px; }
+    .quiet:hover { color: var(--ink); }
+    .quiet.danger:hover { color: var(--vermilion); }
+    .sync-pill {
+      border: 1px solid var(--ink); background: transparent; padding: 5px 12px;
+      font: inherit; font-size: 13px; cursor: pointer; margin-left: 4px;
+    }
+    .sync-pill.on { background: var(--ink); color: var(--paper-2); }
+    .linkish { color: var(--vermilion); cursor: pointer; background: none; border: 0; font: inherit; padding: 0; text-decoration: underline; text-underline-offset: 3px; }
+    .pane { overflow: auto; padding: 22px 24px; }
+    .split-2 { display: grid; grid-template-columns: minmax(280px, 4.5fr) minmax(360px, 6.5fr); width: 100%; min-height: 0; }
+    .split-2 > :first-child { border-right: 1px solid var(--rule); background: var(--panel); }
+    .month { font-size: 12px; color: var(--ink-soft); margin: 16px 0 6px; font-weight: 600; }
+    .m-item, .row { padding: 10px 8px; border-bottom: 1px dashed var(--rule); cursor: pointer; }
+    .m-item:hover, .m-item.sel, .row:hover, .row.sel { background: #efe6d6; }
+    .m-item .t, .row .title { font-weight: 500; }
+    .meta, .src { font-size: 12px; color: var(--ink-soft); margin-top: 3px; }
+    .meta { font-family: "IBM Plex Mono", monospace; }
+    .doc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+    .tools { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+    .meta-line { font-size: 13px; color: var(--ink-soft); margin: 6px 0 0; font-family: "IBM Plex Mono", monospace; }
+    .tabs { display: flex; gap: 18px; margin: 18px 0 12px; border-bottom: 1px solid var(--rule); }
+    .tab { padding: 0 0 8px; border: 0; background: none; cursor: pointer; font: inherit; color: var(--ink-soft); }
+    .tab.on { color: var(--ink); font-weight: 600; box-shadow: inset 0 -1px 0 var(--ink); }
+    .deep-empty { padding: 6px 0 2px; }
+    .deep-empty .hint { margin: 0 0 4px; }
+    .deep-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
+    .todo-strip h3 { font-family: "Noto Serif SC", serif; font-size: 15px; margin: 0 0 8px; }
+    .todo-mini { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; font-size: 13px; }
+    .ledger { width: 100%; display: grid; grid-template-columns: 168px 1fr 340px; min-height: 0; }
+    .settings { width: 100%; display: grid; grid-template-columns: 168px minmax(0, 1fr); min-height: 0; }
+    .cats { border-right: 1px solid var(--rule); background: #e4dac9; padding: 22px 14px; overflow: auto; }
+    .cats h2 { font-family: "Noto Serif SC", serif; font-size: 16px; margin: 0 0 12px; }
+    .cat { display: flex; justify-content: space-between; padding: 7px 8px; cursor: pointer; font-size: 14px; }
+    .cat.on { background: var(--ink); color: var(--paper-2); }
+    .cat .n { font-family: "IBM Plex Mono", monospace; font-size: 11px; opacity: 0.7; }
+    .row { display: grid; grid-template-columns: 10px 1fr auto; gap: 10px; align-items: start; }
+    .row.closed .title { text-decoration: line-through; color: var(--ink-soft); }
+    .dot { width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--vermilion); }
+    .dot.done { background: var(--moss); }
+    .who { font-size: 12px; color: var(--ink-soft); font-family: "IBM Plex Mono", monospace; white-space: nowrap; }
+    .origin { margin: 16px 0; font-size: 14px; line-height: 1.7; }
+    .origin .k { color: var(--ink-soft); font-size: 12px; }
+    .formcol { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+    .page { width: 100%; overflow: auto; padding: 28px 36px 56px; }
+    .page-inner { max-width: 640px; }
+    .page-inner.log-pane { max-width: 920px; }
+    pre.mcp-snip {
+      font-family: "IBM Plex Mono", monospace; font-size: 12px; line-height: 1.55;
+      background: #efe6d6; padding: 12px 14px; overflow: auto; white-space: pre-wrap;
+      word-break: break-all; margin: 12px 0; color: var(--ink);
+    }
+    .log-list { margin-top: 8px; }
+    .log-row {
+      display: grid; grid-template-columns: 132px 52px 1fr; gap: 10px;
+      padding: 7px 0; border-bottom: 1px dashed var(--rule);
+      font-size: 12px; line-height: 1.5;
+    }
+    .log-row .when { font-family: "IBM Plex Mono", monospace; color: var(--ink-soft); }
+    .log-row .src { font-weight: 600; }
+    .log-row .txt { min-width: 0; word-break: break-word; }
+    .log-row.err { color: var(--vermilion); }
+    .askbox { display: flex; gap: 4px; margin: 14px 0 12px; }
+    .askbox input { flex: 1; }
+    .ans { font-size: 13px; line-height: 1.65; padding: 10px 0 14px; border-bottom: 1px dashed var(--rule); margin-bottom: 8px; white-space: pre-wrap; }
+    .tx { max-height: 280px; overflow: auto; white-space: pre-wrap; font-size: 12px; line-height: 1.7; background: #efe6d6; padding: 10px 12px; }
+    .filters { display: flex; gap: 6px; margin: 0 0 10px; }
+    .filters button {
+      border: 0; background: transparent; padding: 4px 2px; font: inherit; cursor: pointer; color: var(--ink-soft);
+    }
+    .filters button.on { color: var(--ink); font-weight: 600; }
+    .toast {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: var(--ink); color: var(--paper-2); padding: 8px 14px; font-size: 13px; z-index: 9;
+    }
+    .empty, .hint { color: var(--ink-soft); font-size: 13px; }
+    .empty { padding: 20px 8px; }
+    .more-row { padding: 10px 8px 18px; }
+    .person { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px dashed var(--rule); }
+    .person input { min-width: 0; }
+    .person .alias-cell { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .person .alias-cell input { width: auto; flex: 1; min-width: 0; }
+    .person .dup { font-size: 11px; color: var(--vermilion); flex-shrink: 0; }
+    .block { margin-bottom: 32px; }
+    .block h3 { font-family: "Noto Serif SC", serif; font-size: 17px; margin: 0 0 8px; }
+    .status { font-size: 14px; line-height: 1.7; margin: 0 0 16px; }
+    .field { margin-bottom: 12px; }
+    .field span { display: block; font-size: 12px; color: var(--ink-soft); margin-bottom: 4px; }
+    .field-row { display: grid; grid-template-columns: minmax(0, 1fr) 168px; gap: 12px; margin-top: 12px; }
+    .field-row .field { margin-bottom: 0; }
+    .intake {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      margin: 10px 0 14px; font-size: 13px; color: var(--ink-soft);
+    }
+    .intake-st { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .intake .tools { gap: 0; flex-shrink: 0; }
+    .veil {
+      position: fixed; inset: 0; background: rgba(27, 23, 18, 0.35);
+      display: flex; align-items: center; justify-content: center; z-index: 8;
+    }
+    .sheet {
+      width: min(520px, calc(100% - 32px)); background: var(--paper-2);
+      border: 1px solid var(--ink); padding: 22px 24px 20px;
+    }
+    .sheet.narrow { width: min(420px, calc(100% - 32px)); }
+    .sheet h2 { font-family: "Noto Serif SC", serif; font-size: 20px; margin: 0 0 6px; }
+    .sheet-actions { display: flex; gap: 8px; align-items: center; margin-top: 16px; }
+    .primary.danger { background: var(--vermilion); border-color: var(--vermilion); color: #faf6ee; }
+    .inline-add {
+      display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px;
+    }
+    .inline-add input[type=text] { width: auto; flex: 1; min-width: 140px; }
+    .inline-add input.compact { min-width: 108px; max-width: 180px; padding: 5px 8px; font-size: 12px; }
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
+    .tag {
+      border: 1px solid var(--rule); background: transparent; padding: 2px 8px;
+      font: inherit; font-size: 12px; cursor: pointer; color: var(--ink-soft);
+    }
+    .tag.on, .tag.active { border-color: var(--ink); color: var(--ink); }
+    .tag .x { margin-left: 4px; color: var(--ink-soft); }
+    .md-h1 { font-family: "Noto Serif SC", serif; font-size: 17px; font-weight: 700; margin: 10px 0 6px; }
+    .md-h2 { font-size: 15px; font-weight: 700; margin: 8px 0 5px; }
+    .md-h3 { font-size: 14px; font-weight: 600; margin: 6px 0 4px; }
+    .md-p { font-size: 14px; line-height: 1.75; margin: 4px 0; }
+    .md-li { font-size: 14px; line-height: 1.65; margin: 2px 0 2px 18px; }
+    .md-b { font-weight: 600; }
+    .md-quote { border-left: 3px solid var(--rule); padding-left: 10px; color: var(--ink-soft); margin: 6px 0; font-size: 13px; }
+    .md-code { background: #efe6d6; border-radius: 2px; padding: 1px 5px; font-family: "IBM Plex Mono", monospace; font-size: 12px; }
+    .mbdg-table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 8px 0; }
+    .mbdg-table th, .mbdg-table td { border: 1px solid var(--rule); padding: 6px 8px; text-align: left; vertical-align: top; }
+    .mbdg-table th { background: #efe6d6; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -299,11 +299,8 @@ export function apply(ctx) {
   const watchdog = ctx.interval(() => {
     watchdogTick().catch((e) => console.error('[meeting-brain] 看门狗异常:', e.message))
   }, 30 * 1000)
-  // DSH 退出/插件卸载时，回收自己拉起的后端进程
+  // 后端独立常驻：DSH 退出不再杀掉会议服务（界面在 :3400）。
   ctx.on('dispose', () => {
-    if (managedChild && managedChild.exitCode === null) {
-      try { managedChild.kill() } catch { /* 已退出 */ }
-    }
     managedChild = null
   })
   // 看门狗定时器随 ctx.interval 自动清理，无需手动 dispose

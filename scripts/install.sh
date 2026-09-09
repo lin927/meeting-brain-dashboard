@@ -93,7 +93,7 @@ info "安装依赖（首次会下载约 24MB 本地嵌入模型，之后离线�
 cd "$REPO_DIR"
 # devDependencies 含后端运行时依赖（express + transformers），npm 会一并安装
 npm install --no-audit --no-fund
-info "构建插件 bundle（lib/client.js 驾驶舱 UI + lib/index.js 会议工具）…"
+info "构建独立界面与 DSH 会议工具…"
 npm run build
 
 # ---------- 4. 检测并安装 DSH（DeepSeek Harness） ----------
@@ -126,11 +126,8 @@ fi
 info "DSH Web profile 已存在（$PROFILE_DIR）"
 
 # 幂等：已在 dependencies 中则跳过
-# 注：meeting-brain-dashboard 是「客户端插件 + bundle patch」双角色包——
-#   - package.json 声明 dsh.bundle.patch（cordis.patch.yml 注册插件行到 loader）
-#   - package.json 声明 dsh.client（client-modules 扫描后挂载浏览器 half）
-#   - 零生产依赖：profile 的 pnpm install 不会重复下载 transformers/onnxruntime
-#   - pnpm 的 file: 依赖以硬链接同步整个仓库目录，cordis.patch.yml 自动带上
+# 注：meeting-brain-dashboard 仍通过 dsh.bundle.patch 注册 host 会议工具。
+# 独立界面由 localhost:3400 提供，不再声明 dsh.client。
 if ! grep -q "\"$PACKAGE_NAME\"" "$PROFILE_DIR/package.json"; then
   info "注册插件到 DSH Web profile…"
   # 用 node 修改 package.json（安全 JSON 处理）
@@ -197,10 +194,10 @@ fi
 echo
 info "======================================================"
 info "安装完成！"
-info "  1. 重启 DSH Web GUI（插件注册需重启生效）"
-info "  2. 打开对话界面 → 顶部「会议驾驶舱」tab"
-info "  3. 首次使用点击「立即同步」拉取你的钉钉听记"
-info "  4. 若未同步任何内容：确认已执行 dws auth login 且账号有听记权限"
+info "  1. 浏览器打开 http://127.0.0.1:$BACKEND_PORT"
+info "  2. 打开「同步」确认 DWS 登录后点立即同步"
+info "  3. 在会议详情可修改关键信息、勾选是否上传公司知识库"
+info "  4. DSH 对话仍可调用会议工具；界面不在 DSH tab 上"
 info "======================================================"
 echo
 info "常用命令："

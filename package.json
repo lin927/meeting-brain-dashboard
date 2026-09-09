@@ -1,32 +1,23 @@
 {
   "name": "meeting-brain-dashboard",
   "version": "0.2.0",
-  "description": "会议智能中枢分发包：本地后端（同步钉钉听记 + 本地向量检索 + DeepSeek 问答）+ DSH 驾驶舱 Client 插件。数据留在各自电脑，AI 生成走 DeepSeek 云端。",
+  "description": "会议智能助手：本机同步钉钉听记、独立 Web 界面、本地向量检索。DSH 等助手通过工具/API 查询，不再把界面挂在 DSH tab 上。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": {
       "default": "./lib/index.js"
     },
-    "./client": {
-      "default": "./lib/client.js"
-    },
     "./package.json": "./package.json"
   },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
-    },
-    "client": {
-      "inject": [
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-slots"
-      ],
-      "platform": "web"
     }
   },
   "files": [
     "lib",
+    "public",
     "server",
     "cordis.patch.yml"
   ],
@@ -40,17 +31,20 @@
   "engines": {
     "node": ">=22.5"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.5.4"
+  },
   "devDependencies": {
     "@huggingface/transformers": "^3.0.0",
     "esbuild": "^0.24.0",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.0",
-    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
-    "react": "^18.0.0"
+    "@deepseek-ai/dsh-tools": "*"
   },
   "license": "MIT"
 }

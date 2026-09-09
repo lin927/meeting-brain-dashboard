@@ -1,5 +1,6 @@
 node_modules/
 lib/client.js
 lib/index.js
+public/app.js
 *.log
 .DS_Store
