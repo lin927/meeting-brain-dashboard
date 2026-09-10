@@ -21,9 +21,9 @@ import {
 import {
   open, updateMeetingFields, setMeta, parseTags,
   insertAction, updateActionFields, deleteAction, getAction, getMeeting,
-  getTodoCats, setTodoCats, saveDeepSummary, deleteMeetingLocal,
+  getTodoCats, setTodoCats, saveDeepSummary, saveRecord, saveTranscript, deleteMeetingLocal,
 } from '../lib/db.js'
-import { setMeetingVisibility, testRagflow } from '../lib/publish.js'
+import { setMeetingVisibility, peekCompanyMeeting, testRagflow } from '../lib/publish.js'
 import { importMeeting } from '../lib/import-meeting.js'
 import { updateDingTalkTitle } from '../lib/minutes-write.js'
 import { syncStatus } from '../lib/sync-status.js'
@@ -35,7 +35,7 @@ import {
   resolveLlmConfig, saveLlmConfig, llmPublicView,
   resolveKbConfig, saveKbConfig, kbPublicView,
 } from '../lib/runtime-config.js'
-import { normalizeType } from '../lib/meeting-type.js'
+import { normalizeType, canPublishType } from '../lib/meeting-type.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT) || 3400
@@ -185,7 +185,7 @@ app.patch('/api/meeting', async (req, res) => {
     const id = String((req.body && req.body.id) || '')
     if (!id) return fail(res, new Error('缺少 id'))
     const fields = {}
-    for (const k of ['title', 'attendees', 'summary']) {
+    for (const k of ['title', 'attendees']) {
       if (req.body[k] !== undefined) fields[k] = req.body[k]
     }
     const typeRaw = req.body.type !== undefined ? req.body.type : req.body.scope
@@ -193,23 +193,44 @@ app.patch('/api/meeting', async (req, res) => {
     if (req.body.tags !== undefined) fields.tags_json = JSON.stringify(parseTags(req.body.tags))
     const deepIn = req.body.deepSummary !== undefined ? req.body.deepSummary
       : (req.body.deep_summary !== undefined ? req.body.deep_summary : undefined)
-    if (Object.keys(fields).length === 0 && deepIn === undefined) return fail(res, new Error('没有可更新字段'))
+    const hasSummary = req.body.summary !== undefined
+    const hasTranscript = req.body.transcript !== undefined
+    if (Object.keys(fields).length === 0 && deepIn === undefined && !hasSummary && !hasTranscript) {
+      return fail(res, new Error('没有可更新字段'))
+    }
     const db = open()
     const m = getMeeting(db, id)
     if (!m) { db.close(); return fail(res, new Error('未找到会议')) }
-    if (fields.scope === '个人' && (m.visibility || 'private') !== 'private') {
+    const wasCompany = (m.visibility || 'private') === 'company' || !!m.company_doc_id
+    const nextType = fields.scope !== undefined ? fields.scope : normalizeType(m.scope)
+    const typeChanged = fields.scope !== undefined && nextType !== normalizeType(m.scope)
+    if (fields.scope === '个人' && wasCompany) {
       fields.visibility = 'private'
     }
     const prevTitle = m.title
+    db.close()
+    if (wasCompany && nextType === '个人') {
+      const retracted = await setMeetingVisibility({ taskUuid: id, visibility: 'private' })
+      if (retracted && retracted.error) return res.status(400).json({ error: retracted.error })
+    }
+    const db2 = open()
     if (Object.keys(fields).length > 0) {
       fields.edited_at = Date.now()
-      updateMeetingFields(db, id, fields)
+      updateMeetingFields(db2, id, fields)
     }
+    const indexIds = []
+    if (hasSummary) indexIds.push(...saveRecord(db2, id, req.body.summary))
+    if (hasTranscript) indexIds.push(...saveTranscript(db2, id, req.body.transcript))
     let deepChunkId = null
-    if (deepIn !== undefined) deepChunkId = saveDeepSummary(db, id, deepIn)
-    db.close()
-    if (deepChunkId) {
-      try { await indexChunkIds([deepChunkId]) } catch (e) { console.error('index deep:', e.message) }
+    if (deepIn !== undefined) deepChunkId = saveDeepSummary(db2, id, deepIn)
+    db2.close()
+    if (wasCompany && typeChanged && canPublishType(nextType)) {
+      const moved = await setMeetingVisibility({ taskUuid: id, visibility: 'company', overwrite: true })
+      if (moved && moved.error) return res.status(400).json({ error: moved.error })
+    }
+    if (deepChunkId) indexIds.push(deepChunkId)
+    if (indexIds.length) {
+      try { await indexChunkIds(indexIds) } catch (e) { console.error('index meeting:', e.message) }
     }
     let dingTalkTitle = null
     const skipDingTalk = req.body.skipDingTalk === true
@@ -235,10 +256,29 @@ app.post('/api/meeting/delete', async (req, res) => {
     const id = String((req.body && req.body.id) || '')
     if (!id) return fail(res, new Error('缺少 id'))
     const db = open()
-    const okDel = deleteMeetingLocal(db, id)
+    const m = getMeeting(db, id)
+    if (!m) { db.close(); return fail(res, new Error('未找到会议')) }
+    const needRetract = (m.visibility || 'private') === 'company' || !!m.company_doc_id
     db.close()
+    if (needRetract) {
+      const retracted = await setMeetingVisibility({ taskUuid: id, visibility: 'private' })
+      if (retracted && retracted.error) return res.status(400).json({ error: retracted.error })
+    }
+    const db2 = open()
+    const okDel = deleteMeetingLocal(db2, id)
+    db2.close()
     if (!okDel) return fail(res, new Error('未找到会议'))
     ok(res, { ok: true, id })
+  } catch (e) { fail(res, e) }
+})
+
+app.get('/api/publish/status', async (req, res) => {
+  try {
+    const id = String((req.query && req.query.id) || '')
+    if (!id) return fail(res, new Error('缺少 id'))
+    const r = await peekCompanyMeeting(id)
+    if (r && r.error) return res.status(400).json({ error: r.error })
+    ok(res, r)
   } catch (e) { fail(res, e) }
 })
 
@@ -246,8 +286,9 @@ app.post('/api/publish', async (req, res) => {
   try {
     const id = String((req.body && req.body.id) || '')
     const visibility = String((req.body && req.body.visibility) || 'private')
+    const overwrite = !!(req.body && req.body.overwrite)
     if (!id) return fail(res, new Error('缺少 id'))
-    const r = await setMeetingVisibility({ taskUuid: id, visibility })
+    const r = await setMeetingVisibility({ taskUuid: id, visibility, overwrite })
     if (r && r.error) return res.status(400).json({ error: r.error })
     ok(res, r)
   } catch (e) { fail(res, e) }
@@ -281,7 +322,8 @@ app.post('/api/todos', async (req, res) => {
       due: String((req.body && req.body.due) || ''),
     })
     db.close()
-    ok(res, { ok: true, id })
+    const listed = queryTodos({ id, status: 'all', limit: 1 })
+    ok(res, { ok: true, id, item: listed.selected || null })
   } catch (e) { fail(res, e) }
 })
 

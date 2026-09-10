@@ -54,6 +54,23 @@
     .view-off { display: none !important; }
     h1 { font-family: "Noto Serif SC", serif; font-size: 26px; font-weight: 600; margin: 0 0 6px; }
     h2.detail-h { font-family: "Noto Serif SC", serif; font-size: 22px; margin: 0; }
+    textarea.title-input {
+      width: 100%; font-family: "Noto Serif SC", serif; font-size: 22px; font-weight: 600;
+      margin: 0; padding: 2px 0 6px; border: 0; border-bottom: 1px solid transparent;
+      background: transparent; color: var(--ink); line-height: 1.4;
+      min-height: 0; resize: none; overflow: hidden; field-sizing: content;
+    }
+    textarea.title-input:hover { border-bottom-color: var(--rule); }
+    textarea.title-input:focus {
+      outline: none; border-bottom-color: var(--ink); background: transparent;
+    }
+    textarea.title-input::placeholder { color: var(--ink-soft); font-weight: 400; }
+    textarea.title-input-row {
+      font-family: inherit; font-size: 15px; font-weight: 500; line-height: 1.4;
+      padding: 0 0 2px; max-height: 4.2em; overflow-y: auto;
+    }
+    .row.closed textarea.title-input-row { text-decoration: line-through; color: var(--ink-soft); }
+    .row textarea.title-input-row { cursor: text; }
     .lede { font-size: 13px; color: var(--ink-soft); margin: 0 0 18px; }
     input[type=text], input[type=date], input[type=datetime-local], input[type=password], textarea, select {
       width: 100%; padding: 9px 11px; border: 1px solid var(--rule); background: #fffdf8; font: inherit;
@@ -84,25 +101,56 @@
     .doc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
     .tools { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
     .meta-line { font-size: 13px; color: var(--ink-soft); margin: 6px 0 0; font-family: "IBM Plex Mono", monospace; }
-    .tabs { display: flex; gap: 18px; margin: 18px 0 12px; border-bottom: 1px solid var(--rule); }
+    .tabs {
+      display: flex; align-items: flex-end; gap: 18px;
+      margin: 18px 0 12px; border-bottom: 1px solid var(--rule);
+    }
     .tab { padding: 0 0 8px; border: 0; background: none; cursor: pointer; font: inherit; color: var(--ink-soft); }
     .tab.on { color: var(--ink); font-weight: 600; box-shadow: inset 0 -1px 0 var(--ink); }
+    .tabs-actions {
+      margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+      padding-bottom: 6px;
+    }
+    .tabs-actions .sync-pill { margin-left: 0; }
     .deep-empty { padding: 6px 0 2px; }
     .deep-empty .hint { margin: 0 0 4px; }
-    .deep-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
+    .deep-empty .primary { margin-top: 8px; }
+    .body-hint { margin: 8px 0 0; }
+    textarea.body-edit {
+      min-height: 420px;
+      height: calc(100dvh - 340px);
+      font-size: 14px; line-height: 1.65; resize: vertical;
+    }
+    textarea.body-edit.tx-edit { font-size: 12px; line-height: 1.7; }
     .todo-strip h3 { font-family: "Noto Serif SC", serif; font-size: 15px; margin: 0 0 8px; }
-    .todo-mini { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; font-size: 13px; }
-    .ledger { width: 100%; display: grid; grid-template-columns: 168px 1fr 340px; min-height: 0; }
+    .todo-mini {
+      display: grid; grid-template-columns: 16px minmax(0, 1fr) auto;
+      gap: 10px; align-items: start; padding: 6px 0; font-size: 13px;
+    }
+    .todo-mini.closed .todo-mini-title,
+    .todo-mini.closed textarea.title-input-row { text-decoration: line-through; color: var(--ink-soft); }
+    .todo-mini textarea.title-input-row { font-size: 13px; cursor: text; }
+    .ledger { width: 100%; display: grid; grid-template-columns: 152px minmax(240px, 0.75fr) minmax(480px, 1.45fr); min-height: 0; }
     .settings { width: 100%; display: grid; grid-template-columns: 168px minmax(0, 1fr); min-height: 0; }
     .cats { border-right: 1px solid var(--rule); background: #e4dac9; padding: 22px 14px; overflow: auto; }
     .cats h2 { font-family: "Noto Serif SC", serif; font-size: 16px; margin: 0 0 12px; }
     .cat { display: flex; justify-content: space-between; padding: 7px 8px; cursor: pointer; font-size: 14px; }
     .cat.on { background: var(--ink); color: var(--paper-2); }
     .cat .n { font-family: "IBM Plex Mono", monospace; font-size: 11px; opacity: 0.7; }
-    .row { display: grid; grid-template-columns: 10px 1fr auto; gap: 10px; align-items: start; }
-    .row.closed .title { text-decoration: line-through; color: var(--ink-soft); }
-    .dot { width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--vermilion); }
-    .dot.done { background: var(--moss); }
+    .row { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 10px; align-items: start; }
+    .row.closed .title, .row.closed .src { text-decoration: line-through; color: var(--ink-soft); }
+    .check {
+      width: 16px; height: 16px; margin-top: 3px; padding: 0;
+      border: 1px solid var(--vermilion); border-radius: 50%;
+      background: transparent; cursor: pointer; flex-shrink: 0;
+    }
+    .check.on { background: var(--moss); border-color: var(--moss); }
+    .cat-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+    .cat-pills button {
+      border: 1px solid var(--rule); background: #fffdf8; padding: 5px 10px;
+      font: inherit; font-size: 13px; cursor: pointer; color: var(--ink-soft);
+    }
+    .cat-pills button.on { border-color: var(--ink); color: var(--ink); font-weight: 600; }
     .who { font-size: 12px; color: var(--ink-soft); font-family: "IBM Plex Mono", monospace; white-space: nowrap; }
     .origin { margin: 16px 0; font-size: 14px; line-height: 1.7; }
     .origin .k { color: var(--ink-soft); font-size: 12px; }

@@ -1,24 +1,25 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { api, qs } from './api.js'
 import { TODO_PAGE, fmtDateTime, originLabel } from './format.js'
-import { ConfirmSheet, InlineComposer, SheetFrame, useDebounced } from './ui.jsx'
+import { CheckMark, ConfirmSheet, InlineComposer, TitleInput, TodoRowTitle, useDebounced } from './ui.jsx'
 
-function AddTodoSheet(props) {
-  const cats = props.cats || ['其他']
-  const [title, setTitle] = useState('')
-  const [owner, setOwner] = useState('')
-  const [cat, setCat] = useState(cats[0] || '其他')
-  const [meetingId, setMeetingId] = useState(props.defaultMeetingId || '')
+function CatPills(props) {
+  return (
+    <div className="cat-pills">
+      {(props.cats || []).map((c) => (
+        <button type="button" key={c} className={props.value === c ? 'on' : ''} onClick={() => props.onChange(c)}>{c}</button>
+      ))}
+    </div>
+  )
+}
+
+function MeetingPicker(props) {
   const [q, setQ] = useState('')
-  const [busy, setBusy] = useState(false)
   const [meetings, setMeetings] = useState([])
   const qDebounced = useDebounced(q, 220)
-  const titleRef = useRef(null)
-  useEffect(() => { if (titleRef.current) titleRef.current.focus() }, [])
   useEffect(() => {
     api('/api/meetings' + qs({ q: qDebounced, limit: 40 })).then((r) => {
-      const items = (r && r.items) || []
-      setMeetings(items)
+      setMeetings((r && r.items) || [])
     }).catch(() => {})
   }, [qDebounced])
   useEffect(() => {
@@ -31,58 +32,121 @@ function AddTodoSheet(props) {
     }).catch(() => {})
   }, [props.defaultMeetingId])
   const options = meetings.slice()
-  if (meetingId && !options.some((m) => m.taskUuid === meetingId)) {
-    const cur = meetings.find((m) => m.taskUuid === meetingId)
+  if (props.value && !options.some((m) => m.taskUuid === props.value)) {
+    const cur = meetings.find((m) => m.taskUuid === props.value)
     if (cur) options.unshift(cur)
   }
-  const submit = () => {
+  return (
+    <div className="field">
+      <span>所属会议</span>
+      <input type="text" placeholder="过滤会议标题" value={q} onChange={(ev) => setQ(ev.target.value)} style={{ marginBottom: 6 }} />
+      <select value={props.value} onChange={(ev) => props.onChange(ev.target.value)}>
+        <option value="">{meetings.length ? '选择会议' : '没有会议'}</option>
+        {options.map((m) => <option key={m.taskUuid} value={m.taskUuid}>{m.title}</option>)}
+      </select>
+    </div>
+  )
+}
+
+function TodoInspector(props) {
+  const cats = props.cats || ['其他']
+  const item = props.item
+  const composing = props.composing
+  const titleRef = useRef(null)
+  const [title, setTitle] = useState(composing ? '' : (item && item.title) || '')
+  const [owner, setOwner] = useState(composing ? '' : (item && item.owner) || '')
+  const [cat, setCat] = useState(composing ? (cats.includes('其他') ? '其他' : (cats[0] || '其他')) : ((item && item.cat) || '其他'))
+  const [due, setDue] = useState(composing ? '' : (item && item.due) || '')
+  const [meetingId, setMeetingId] = useState(props.defaultMeetingId || '')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (composing && titleRef.current) titleRef.current.focus()
+  }, [composing])
+
+  const saveField = (fields) => {
+    if (composing || !item) return
+    props.onPatch(item.id, fields)
+  }
+  const submitNew = () => {
     if (busy) return
     if (!title.trim()) { props.toast('先写待办事项'); return }
     if (!meetingId) { props.toast('选出所属会议'); return }
     setBusy(true)
     api('/api/todos', {
-      title: title.trim(), meetingId, owner: owner.trim(), cat, origin: '手工',
+      title: title.trim(), meetingId, owner: owner.trim(), cat, due: due.trim(), origin: '手工',
     }).then((r) => {
       props.toast('已添加')
-      props.onCreated(r.id)
+      props.onCreated(r.item || { id: r.id })
     }).catch((err) => props.toast(String(err && err.message || err))).finally(() => setBusy(false))
   }
+
   return (
-    <SheetFrame title="登记待办" lede="挂到本机一场会议上。不会写到钉钉。" onClose={props.onClose}>
+    <div className="formcol">
+      {composing
+        ? (
+          <TitleInput
+            inputRef={titleRef}
+            value={title}
+            placeholder="新待办"
+            autoFocus
+            onChange={setTitle}
+            onCommit={() => {}}
+            onCancel={() => setTitle('')}
+            onEnter={submitNew}
+          />
+        )
+        : null}
       <div className="field">
-        <span>事项</span>
+        <span>责任人</span>
         <input
-          ref={titleRef}
           type="text"
-          placeholder="要做的事"
-          value={title}
-          onChange={(ev) => setTitle(ev.target.value)}
-          onKeyDown={(ev) => { if (ev.key === 'Enter') submit() }}
+          placeholder="可空"
+          value={owner}
+          onChange={(ev) => setOwner(ev.target.value)}
+          onBlur={() => { if (!composing && owner.trim() !== (item.owner || '')) saveField({ owner: owner.trim() }) }}
+          onKeyDown={(ev) => { if (ev.key === 'Enter') { ev.preventDefault(); composing ? submitNew() : ev.currentTarget.blur() } }}
         />
       </div>
       <div className="field">
-        <span>责任人</span>
-        <input type="text" placeholder="可空" value={owner} onChange={(ev) => setOwner(ev.target.value)} />
-      </div>
-      <div className="field">
         <span>归类</span>
-        <select value={cat} onChange={(ev) => setCat(ev.target.value)}>
-          {cats.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
+        <CatPills
+          cats={cats}
+          value={cat}
+          onChange={(c) => {
+            setCat(c)
+            if (!composing) saveField({ cat: c })
+          }}
+        />
       </div>
       <div className="field">
-        <span>所属会议</span>
-        <input type="text" placeholder="过滤会议标题" value={q} onChange={(ev) => setQ(ev.target.value)} style={{ marginBottom: 6 }} />
-        <select value={meetingId} onChange={(ev) => setMeetingId(ev.target.value)}>
-          <option value="">{meetings.length ? '选择会议' : '没有会议'}</option>
-          {options.map((m) => <option key={m.taskUuid} value={m.taskUuid}>{m.title}</option>)}
-        </select>
+        <span>时限</span>
+        <input
+          type="text"
+          placeholder="可空"
+          value={due}
+          onChange={(ev) => setDue(ev.target.value)}
+          onBlur={() => { if (!composing && due.trim() !== (item.due || '')) saveField({ due: due.trim() }) }}
+          onKeyDown={(ev) => { if (ev.key === 'Enter') { ev.preventDefault(); composing ? submitNew() : ev.currentTarget.blur() } }}
+        />
       </div>
-      <div className="sheet-actions">
-        <button className="primary" onClick={submit} disabled={busy}>{busy ? '添加中' : '添加'}</button>
-        <button className="quiet" onClick={props.onClose}>取消</button>
-      </div>
-    </SheetFrame>
+      {composing
+        ? <MeetingPicker value={meetingId} onChange={setMeetingId} defaultMeetingId={props.defaultMeetingId} />
+        : (
+          <div className="origin">
+            <div><span className="k">来源</span>　{originLabel(item.origin)}{item.created ? ' · ' + fmtDateTime(item.created) : ''}</div>
+            <div><span className="k">会议</span>　<button className="linkish" onClick={() => props.goMeet(item.meetingId)}>{item.meeting}</button></div>
+          </div>
+        )}
+      {composing
+        ? (
+          <div>
+            <button className="primary" onClick={submitNew} disabled={busy}>{busy ? '添加中' : '添加'}</button>
+            <button className="quiet" onClick={props.onCancel}>取消</button>
+          </div>
+        )
+        : <button className="quiet danger" onClick={props.onDelete}>删除</button>}
+    </div>
   )
 }
 
@@ -93,9 +157,10 @@ export function LedgerPage(props) {
   const [err, setErr] = useState(null)
   const [catFilter, setCatFilter] = useState('all')
   const [stFilter, setStFilter] = useState('open')
-  const [editing, setEditing] = useState(false)
-  const [form, setForm] = useState({})
-  const [showAdd, setShowAdd] = useState(false)
+  const [todoQuery, setTodoQuery] = useState('')
+  const qDebounced = useDebounced(todoQuery, 280)
+  const [composing, setComposing] = useState(false)
+  const [composeKey, setComposeKey] = useState(0)
   const [addingCat, setAddingCat] = useState(false)
   const [confirmDel, setConfirmDel] = useState(false)
   const [delBusy, setDelBusy] = useState(false)
@@ -107,6 +172,7 @@ export function LedgerPage(props) {
     const append = !!opts.append
     if (append) setMoreBusy(true)
     return api('/api/todos' + qs({
+      q: qDebounced,
       status: stFilter,
       cat: catFilter === 'all' ? '' : catFilter,
       cursor: opts.cursor || '',
@@ -115,6 +181,7 @@ export function LedgerPage(props) {
       if (id !== reqId.current) return
       const next = r.items || []
       setErr(null)
+      if (!append) setComposing(false)
       setMeta((prev) => ({
         total: r.total || 0,
         open: r.open || 0,
@@ -134,11 +201,11 @@ export function LedgerPage(props) {
       if (!append) setErr(String(er && er.message || er))
       else toast(String(er && er.message || er))
     }).finally(() => { if (append) setMoreBusy(false) })
-  }, [stFilter, catFilter])
+  }, [stFilter, catFilter, qDebounced])
 
   useEffect(() => { if (props.active) load() }, [load, props.active])
   useEffect(() => {
-    if (!selected || !items) return undefined
+    if (!selected || !items || composing) return undefined
     if (items.some((x) => x.id === selected)) return undefined
     let alive = true
     api('/api/todos' + qs({ id: selected, status: 'all', limit: 1 })).then((r) => {
@@ -150,67 +217,83 @@ export function LedgerPage(props) {
       })
     }).catch(() => {})
     return () => { alive = false }
-  }, [selected, items])
+  }, [selected, items, composing])
 
   if (err) return <div className="pane"><p className="empty">{err}</p></div>
   if (!items) return <div className="pane"><p className="empty">加载中…</p></div>
 
   const cats = meta.cats
-  const current = items.find((x) => x.id === selected) || meta.selected || items[0]
+  const listed = items.find((x) => x.id === selected) || meta.selected || items[0]
+  const current = composing ? null : listed
   const remain = Math.max(0, (meta.filteredTotal || 0) - items.length)
-  const patch = (body, msg) => {
-    api('/api/todos', body, 'PATCH').then(() => { if (msg) toast(msg); setEditing(false); load() }).catch((er) => toast(String(er && er.message || er)))
+  const patchLocal = (id, fields) => {
+    setItems((prev) => (prev || []).map((x) => x.id === id ? { ...x, ...fields } : x))
+    setMeta((m) => (m.selected && m.selected.id === id ? { ...m, selected: { ...m.selected, ...fields } } : m))
+  }
+  const onPatch = (id, fields) => {
+    const prev = (items || []).find((x) => x.id === id) || meta.selected
+    patchLocal(id, fields)
+    api('/api/todos', { id, ...fields }, 'PATCH').catch((er) => {
+      if (prev) patchLocal(id, prev)
+      toast(String(er && er.message || er))
+    })
+  }
+  const toggleStatus = (x, ev) => {
+    if (ev) ev.stopPropagation()
+    const next = x.status === 'done' ? 'open' : 'done'
+    const prevStatus = x.status
+    patchLocal(x.id, { status: next })
+    setMeta((m) => ({ ...m, open: Math.max(0, m.open + (next === 'open' ? 1 : -1)) }))
+    if (composing) { setComposing(false); setSelected(x.id) }
+    api('/api/todos', { id: x.id, status: next }, 'PATCH').catch((er) => {
+      patchLocal(x.id, { status: prevStatus })
+      setMeta((m) => ({ ...m, open: Math.max(0, m.open + (prevStatus === 'open' ? 1 : -1)) }))
+      toast(String(er && er.message || er))
+    })
   }
   const addCat = (name) => {
     const n = String(name || '').trim()
     if (!n) { setAddingCat(false); return }
-    api('/api/todo-cats', { name: n }).then(() => { setAddingCat(false); load() }).catch((er) => toast(String(er && er.message || er)))
+    api('/api/todo-cats', { name: n }).then(() => {
+      setAddingCat(false)
+      setMeta((m) => ({ ...m, cats: m.cats.includes(n) ? m.cats : m.cats.concat(n), catCounts: { ...m.catCounts, [n]: m.catCounts[n] || 0 } }))
+    }).catch((er) => toast(String(er && er.message || er)))
   }
   const doDeleteTodo = () => {
     if (!current || delBusy) return
     setDelBusy(true)
-    api('/api/todos/delete', { id: current.id }).then(() => {
-      toast('已删除'); setSelected(0); setConfirmDel(false); load()
+    const id = current.id
+    const wasOpen = current.status === 'open'
+    api('/api/todos/delete', { id }).then(() => {
+      toast('已删除')
+      setConfirmDel(false)
+      setSelected(0)
+      setItems((prev) => (prev || []).filter((x) => x.id !== id))
+      setMeta((m) => ({
+        ...m,
+        selected: null,
+        total: Math.max(0, m.total - 1),
+        open: Math.max(0, m.open - (wasOpen ? 1 : 0)),
+        filteredTotal: Math.max(0, m.filteredTotal - 1),
+      }))
     }).catch((er) => toast(String(er && er.message || er))).finally(() => setDelBusy(false))
   }
-
-  let detail = <p className="empty">选一条待办</p>
-  if (current) {
-    if (editing) {
-      detail = (
-        <div className="formcol">
-          <input type="text" value={form.title} onChange={(ev) => setForm({ ...form, title: ev.target.value })} />
-          <input type="text" value={form.owner} onChange={(ev) => setForm({ ...form, owner: ev.target.value })} />
-          <select value={form.cat} onChange={(ev) => setForm({ ...form, cat: ev.target.value })}>
-            {cats.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <input type="text" placeholder="时限，可空" value={form.due} onChange={(ev) => setForm({ ...form, due: ev.target.value })} />
-          <div>
-            <button className="primary" onClick={() => patch({ id: current.id, ...form }, '已保存')}>保存</button>
-            <button className="quiet" onClick={() => setEditing(false)}>取消</button>
-          </div>
-        </div>
-      )
-    } else {
-      detail = (
-        <div>
-          <div className="doc-head">
-            <h2 className="detail-h">{current.title}</h2>
-            <div className="tools">
-              <button className="quiet" onClick={() => { setForm({ title: current.title, owner: current.owner, cat: current.cat, due: current.due || '' }); setEditing(true) }}>编辑</button>
-              {current.status === 'open'
-                ? <button className="sync-pill" onClick={() => patch({ id: current.id, status: 'done' }, '已关闭')}>关闭</button>
-                : <button className="quiet" onClick={() => patch({ id: current.id, status: 'open' }, '已打开')}>打开</button>}
-            </div>
-          </div>
-          <p className="meta-line">{[current.owner, current.cat, current.due].filter(Boolean).join(' · ')}</p>
-          <div className="origin">
-            <div><span className="k">来源</span>　{originLabel(current.origin)}{current.created ? ' · ' + fmtDateTime(current.created) : ''}</div>
-            <div><span className="k">会议</span>　<button className="linkish" onClick={() => goMeet(current.meetingId)}>{current.meeting}</button></div>
-          </div>
-          <button className="quiet danger" onClick={() => setConfirmDel(true)}>删除</button>
-        </div>
-      )
+  const startCompose = () => {
+    setComposing(true)
+    setComposeKey((n) => n + 1)
+  }
+  const onCreated = (item) => {
+    setComposing(false)
+    if (item && item.id) {
+      setSelected(item.id)
+      if (item.title) {
+        setItems((prev) => {
+          const list = prev || []
+          if (list.some((x) => x.id === item.id)) return list
+          return [item].concat(list)
+        })
+        setMeta((m) => ({ ...m, total: m.total + 1, open: m.open + 1, filteredTotal: m.filteredTotal + 1 }))
+      }
     }
   }
 
@@ -244,29 +327,41 @@ export function LedgerPage(props) {
             <h1>待办</h1>
             <p className="lede">{meta.open + ' 项未关闭'}</p>
           </div>
-          <button className="quiet" onClick={() => setShowAdd(true)}>+ 待办</button>
+          <button className="quiet" onClick={startCompose}>+ 待办</button>
         </div>
         <div className="filters">
           <button className={stFilter === 'open' ? 'on' : ''} onClick={() => setStFilter('open')}>未关闭</button>
           <button className={stFilter === 'done' ? 'on' : ''} onClick={() => setStFilter('done')}>已关闭</button>
           <button className={stFilter === 'all' ? 'on' : ''} onClick={() => setStFilter('all')}>全部</button>
         </div>
+        <input
+          type="text"
+          placeholder="过滤事项、责任人或会议"
+          value={todoQuery}
+          onChange={(ev) => setTodoQuery(ev.target.value)}
+          style={{ marginBottom: 8 }}
+        />
         {items.length
           ? items.map((x) => (
             <div
-              className={'row' + (current && x.id === current.id ? ' sel' : '') + (x.status === 'done' ? ' closed' : '')}
+              className={'row' + (!composing && current && x.id === current.id ? ' sel' : '') + (x.status === 'done' ? ' closed' : '')}
               key={x.id}
-              onClick={() => { setSelected(x.id); setEditing(false) }}
+              onClick={() => { setComposing(false); setSelected(x.id) }}
             >
-              <div className={'dot ' + x.status} />
+              <CheckMark on={x.status === 'done'} onClick={(ev) => toggleStatus(x, ev)} />
               <div>
-                <div className="title">{x.title}</div>
+                <TodoRowTitle
+                  title={x.title}
+                  toast={toast}
+                  onFocus={() => { setComposing(false); setSelected(x.id) }}
+                  onSave={(title) => onPatch(x.id, { title })}
+                />
                 <div className="src">{x.meeting}</div>
               </div>
               <div className="who">{x.owner}</div>
             </div>
           ))
-          : <p className="empty">没有待办</p>}
+          : <p className="empty">{qDebounced ? '没有匹配的待办' : '没有待办'}</p>}
         {meta.nextCursor
           ? (
             <div className="more-row">
@@ -277,18 +372,33 @@ export function LedgerPage(props) {
           )
           : null}
       </div>
-      <div className="pane">{detail}</div>
-      {showAdd
-        ? (
-          <AddTodoSheet
-            cats={cats}
-            toast={toast}
-            defaultMeetingId={(current && current.meetingId) || ''}
-            onClose={() => setShowAdd(false)}
-            onCreated={(id) => { setShowAdd(false); setSelected(id); setStFilter('open'); load() }}
-          />
-        )
-        : null}
+      <div className="pane">
+        {composing
+          ? (
+            <TodoInspector
+              key={'new-' + composeKey}
+              composing
+              cats={cats}
+              toast={toast}
+              defaultMeetingId={(listed && listed.meetingId) || ''}
+              onCreated={onCreated}
+              onCancel={() => setComposing(false)}
+            />
+          )
+          : (current
+              ? (
+                <TodoInspector
+                  key={current.id}
+                  item={current}
+                  cats={cats}
+                  toast={toast}
+                  goMeet={goMeet}
+                  onPatch={onPatch}
+                  onDelete={() => setConfirmDel(true)}
+                />
+              )
+              : <p className="empty">选一条待办</p>)}
+      </div>
       {confirmDel && current
         ? (
           <ConfirmSheet

@@ -2,6 +2,104 @@ import React, { useEffect, useRef, useState } from 'react'
 
 const e = React.createElement
 
+export function CheckMark(props) {
+  const on = !!props.on
+  return (
+    <button
+      type="button"
+      className={'check' + (on ? ' on' : '')}
+      aria-pressed={on}
+      aria-label={on ? '恢复' : '完成'}
+      onClick={(ev) => {
+        ev.stopPropagation()
+        if (props.onClick) props.onClick(ev)
+      }}
+    />
+  )
+}
+
+export function TitleInput(props) {
+  const skipCommit = useRef(false)
+  const inner = useRef(null)
+  const setRef = (el) => {
+    inner.current = el
+    if (typeof props.inputRef === 'function') props.inputRef(el)
+    else if (props.inputRef) props.inputRef.current = el
+  }
+  const grow = () => {
+    const el = inner.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = el.scrollHeight + 'px'
+  }
+  useEffect(() => { grow() }, [props.value])
+  return (
+    <textarea
+      ref={setRef}
+      rows={1}
+      className={'title-input' + (props.className ? ' ' + props.className : '')}
+      value={props.value}
+      placeholder={props.placeholder || ''}
+      autoFocus={!!props.autoFocus}
+      onFocus={() => { if (props.onFocus) props.onFocus() }}
+      onChange={(ev) => {
+        props.onChange(ev.target.value)
+        requestAnimationFrame(grow)
+      }}
+      onBlur={() => {
+        if (skipCommit.current) { skipCommit.current = false; return }
+        if (props.onCommit) props.onCommit()
+      }}
+      onKeyDown={(ev) => {
+        if (ev.key === 'Enter') {
+          ev.preventDefault()
+          if (props.onEnter) props.onEnter()
+          else ev.currentTarget.blur()
+        }
+        if (ev.key === 'Escape') {
+          ev.preventDefault()
+          skipCommit.current = true
+          if (props.onCancel) props.onCancel()
+          ev.currentTarget.blur()
+        }
+      }}
+    />
+  )
+}
+
+export function TodoRowTitle(props) {
+  const [draft, setDraft] = useState(props.title)
+  const focused = useRef(false)
+  useEffect(() => {
+    if (!focused.current) setDraft(props.title)
+  }, [props.title])
+  return (
+    <TitleInput
+      className={'title-input-row' + (props.className ? ' ' + props.className : '')}
+      value={draft}
+      onFocus={() => {
+        focused.current = true
+        if (props.onFocus) props.onFocus()
+      }}
+      onChange={setDraft}
+      onCommit={() => {
+        focused.current = false
+        const next = draft.trim()
+        if (!next) {
+          setDraft(props.title)
+          if (props.toast) props.toast('先写待办事项')
+          return
+        }
+        if (next !== props.title) props.onSave(next)
+      }}
+      onCancel={() => {
+        focused.current = false
+        setDraft(props.title)
+      }}
+    />
+  )
+}
+
 export function useEscape(onClose) {
   useEffect(() => {
     if (!onClose) return undefined

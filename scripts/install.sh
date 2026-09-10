@@ -1,33 +1,41 @@
 #!/usr/bin/env bash
 # =============================================================================
-# meeting-brain-dashboard 一键安装（macOS）
+# 会议助手 · 本机一键安装（macOS）
 #
-# 用途：给公司同事在本机安装「会议驾驶舱」。
-#   1. 检查/安装 Node.js 与钉钉 DWS CLI
-#   2. 安装本仓库依赖（@huggingface/transformers 本地嵌入模型 + express）
-#   3. 构建 DSH client 插件 bundle
-#   4. 注册插件到 DSH Web profile
-#   5. 启动本地后端（localhost:3400）
+# 1. 检查/安装 Node.js 与钉钉 DWS CLI
+# 2. 安装依赖并构建独立界面
+# 3. 把「会议助手」放到桌面，启动 localhost:3400 并打开浏览器
 #
-# 隐私：所有会议数据只存本机 SQLite；AI 问答/深度总结按配置走 DeepSeek 云端。
-# 使用：bash scripts/install.sh
+# 不依赖 DSH。使用：bash scripts/install.sh
 # =============================================================================
 set -euo pipefail
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
-info()  { echo -e "${GREEN}[meeting-brain]${NC} $*"; }
-warn()  { echo -e "${YELLOW}[meeting-brain]${NC} $*"; }
-die()   { echo -e "${RED}[meeting-brain]${NC} $*" >&2; exit 1; }
+info()  { echo -e "${GREEN}[会议助手]${NC} $*"; }
+warn()  { echo -e "${YELLOW}[会议助手]${NC} $*"; }
+die()   { echo -e "${RED}[会议助手]${NC} $*" >&2; exit 1; }
 
-# 仓库根目录（脚本所在目录的上一级）
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
-PROFILE_DIR="$DSH_HOME/profiles/web"
-PACKAGE_NAME="meeting-brain-dashboard"
-BACKEND_PORT="${PORT:-3400}"
+DATA_DIR="${DSH_HOME:-$HOME/.dsh}/meetings"
+export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
+if [ -s "$HOME/.nvm/nvm.sh" ]; then
+  # shellcheck disable=SC1091
+  . "$HOME/.nvm/nvm.sh"
+fi
 
 info "仓库目录: $REPO_DIR"
-info "DSH Home: $DSH_HOME"
+
+node_ok() {
+  command -v node >/dev/null 2>&1 || return 1
+  local ver major minor
+  ver="$(node -v)"
+  major="$(echo "$ver" | sed -n 's/^v\{0,1\}\([0-9]*\)\..*/\1/p')"
+  minor="$(echo "$ver" | sed -n 's/^v\{0,1\}[0-9]*\.\([0-9]*\).*/\1/p')"
+  [ -n "$major" ] || return 1
+  if [ "$major" -gt 22 ]; then return 0; fi
+  if [ "$major" -eq 22 ] && [ "${minor:-0}" -ge 5 ]; then return 0; fi
+  return 1
+}
 
 # ---------- 1. Node.js ----------
 if ! command -v node >/dev/null 2>&1; then
@@ -35,19 +43,13 @@ if ! command -v node >/dev/null 2>&1; then
   if command -v brew >/dev/null 2>&1; then
     brew install node
   else
-    die "未找到 Homebrew。请先安装 Node.js >= 22.5（https://nodejs.org）后重试。"
+    die "未找到 Homebrew。请先安装 Node.js ≥ 22.5（https://nodejs.org）后重试。"
   fi
 fi
-# 从 node -v（如 v24.13.0）提取主版本号，避免不同 shell 的引号传递差异
-NODE_VER="$(node -v)"
-NODE_MAJOR="$(echo "$NODE_VER" | sed -n 's/^v\{0,1\}\([0-9]*\)\..*/\1/p')"
-if [ -z "$NODE_MAJOR" ]; then
-  die "无法解析 Node.js 版本：$NODE_VER"
+if ! node_ok; then
+  die "Node.js 版本过低（$(node -v)），需要 ≥ 22.5。请升级后重试。"
 fi
-if [ "$NODE_MAJOR" -lt 22 ]; then
-  die "Node.js 版本过低（$NODE_VER），需要 >= 22.5。请升级后重试。"
-fi
-info "Node.js $NODE_VER OK"
+info "Node.js $(node -v) OK"
 
 # ---------- 2. 钉钉 DWS CLI ----------
 if ! command -v dws >/dev/null 2>&1; then
@@ -56,13 +58,12 @@ if ! command -v dws >/dev/null 2>&1; then
 fi
 if command -v dws >/dev/null 2>&1; then
   info "DWS $(dws --version 2>/dev/null || echo '已安装') OK"
-  # 版本升级检查：有新版本时询问用户是否升级（dws 语法随版本变化，升级到最新可避免兼容问题）
   if dws upgrade --check 2>&1 | grep -q "新版本可用"; then
     echo
     warn "检测到 DWS 有新版本可用："
     dws upgrade --check 2>&1 | sed -n '1,12p'
     echo
-    read -r -p "[meeting-brain] 是否现在升级 DWS 到最新版本？(y/N): " UPGRADE_ANS
+    read -r -p "[会议助手] 是否现在升级 DWS 到最新版本？(y/N): " UPGRADE_ANS
     if [ "$UPGRADE_ANS" = "y" ] || [ "$UPGRADE_ANS" = "Y" ]; then
       info "正在升级 DWS…"
       dws upgrade || warn "dws upgrade 未完成，可稍后手动执行: dws upgrade"
@@ -70,7 +71,6 @@ if command -v dws >/dev/null 2>&1; then
       info "跳过升级（当前 $(dws --version 2>/dev/null)）。若后续同步报命令错误，请先 dws upgrade。"
     fi
   fi
-  # 登录检测：dws auth status 返回 authenticated。未登录/过期则自动拉起 OAuth 扫码登录。
   AUTH_STATUS="$(dws auth status 2>/dev/null || true)"
   if ! echo "$AUTH_STATUS" | grep -q '"authenticated": true'; then
     warn "检测到 DWS 未登录或登录已过期，自动打开登录（浏览器弹出钉钉授权，请扫码/确认）…"
@@ -80,127 +80,48 @@ if command -v dws >/dev/null 2>&1; then
   fi
 else
   warn "npm 安装 dws 失败（可能网络或权限问题）。请手动安装："
-  warn "  方式 A：npm install -g dingtalk-workspace-cli"
-  warn "  方式 B：curl -fsSL https://dws.dingtalk.com/install | bash"
+  warn "  npm install -g dingtalk-workspace-cli"
   warn "  参考：https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli"
   warn "安装完成后重新运行本脚本，并执行: dws auth login"
 fi
 
 # ---------- 3. 安装依赖 + 构建 ----------
-# 每次运行都强制 npm install + build，保证源码与构建产物一致
-# （lib/index.js、lib/client.js 是构建产物、不进 git，git pull 后必须重建）
-info "安装依赖（首次会下载约 24MB 本地嵌入模型，之后离线可用）…"
+info "安装依赖…"
 cd "$REPO_DIR"
-# devDependencies 含后端运行时依赖（express + transformers），npm 会一并安装
 npm install --no-audit --no-fund
-info "构建独立界面与 DSH 会议工具…"
+info "构建界面…"
 npm run build
 
-# ---------- 4. 检测并安装 DSH（DeepSeek Harness） ----------
-# 驾驶舱插件运行在 DSH Web 里；本仓库不包含 DSH 本体，只包含插件。
-# 步骤：装 dsh 全局命令 → 启动一次 dsh web 生成 profile → 本脚本继续注册插件。
-if ! command -v dsh >/dev/null 2>&1; then
-  warn "未检测到 dsh 命令，尝试通过 npm 全局安装 @deepseek-ai/dsh…"
-  npm install -g @deepseek-ai/dsh >/dev/null 2>&1 || true
+# ---------- 4. 桌面快捷方式 ----------
+mkdir -p "$DATA_DIR"
+DESKTOP=""
+if [ -d "$HOME/Desktop" ]; then DESKTOP="$HOME/Desktop"
+elif [ -d "$HOME/桌面" ]; then DESKTOP="$HOME/桌面"
 fi
-if command -v dsh >/dev/null 2>&1; then
-  info "dsh 已安装: $(dsh --version 2>/dev/null || echo 'OK')"
-else
-  echo
-  die "npm 安装 dsh 失败。请手动执行：npm install -g @deepseek-ai/dsh，然后重新运行本脚本。"
-fi
-# DSH Web 首次启动后才会生成 profile（插件注册目标）
-if [ ! -f "$PROFILE_DIR/package.json" ]; then
-  echo
-  warn "DSH Web 尚未启动过（缺 profile：$PROFILE_DIR）。"
-  warn "请执行以下命令启动 DSH Web（首次启动会生成 profile）："
-  echo
-  warn "        dsh web"
-  warn "      或（不想全局安装时）：npx @deepseek-ai/dsh web"
-  echo
-  warn "确认浏览器打开 http://127.0.0.1:3080 看到 DSH 界面后，"
-  warn "Ctrl+C 停止 DSH，再重新运行本脚本。"
-  echo
-  die "请先启动一次 DSH Web 生成 profile，然后重新运行本脚本。"
-fi
-info "DSH Web profile 已存在（$PROFILE_DIR）"
-
-# 幂等：已在 dependencies 中则跳过
-# 注：meeting-brain-dashboard 仍通过 dsh.bundle.patch 注册 host 会议工具。
-# 独立界面由 localhost:3400 提供，不再声明 dsh.client。
-if ! grep -q "\"$PACKAGE_NAME\"" "$PROFILE_DIR/package.json"; then
-  info "注册插件到 DSH Web profile…"
-  # 用 node 修改 package.json（安全 JSON 处理）
-  node - "$PROFILE_DIR/package.json" "$REPO_DIR" "$PACKAGE_NAME" <<'EOF'
-const [pkgPath, repoDir, pkgName] = process.argv.slice(2)
-const fs = require('node:fs')
-const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
-pkg.dependencies = pkg.dependencies || {}
-pkg.dependencies[pkgName] = `file:${repoDir}`
-pkg.dsh = pkg.dsh || {}
-pkg.dsh.profile = pkg.dsh.profile || {}
-pkg.dsh.profile.bundles = pkg.dsh.profile.bundles || []
-if (!pkg.dsh.profile.bundles.includes(pkgName)) pkg.dsh.profile.bundles.push(pkgName)
-fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n')
-console.log(`已注册 ${pkgName} → ${pkgPath}`)
+if [ -n "$DESKTOP" ]; then
+  LAUNCHER="$DESKTOP/会议助手.command"
+  cat > "$LAUNCHER" <<EOF
+#!/bin/bash
+export PATH="/opt/homebrew/bin:/usr/local/bin:\$HOME/.local/bin:\$PATH"
+exec bash "$REPO_DIR/scripts/start.sh"
 EOF
-  info "安装 profile 依赖（pnpm，仅插件本身，秒级完成）…"
-  (cd "$PROFILE_DIR" && pnpm install --no-frozen-lockfile 2>/dev/null || npm install --no-audit --no-fund)
+  chmod +x "$LAUNCHER"
+  xattr -d com.apple.quarantine "$LAUNCHER" 2>/dev/null || true
+  info "已放到桌面：会议助手.command（以后双击即可）"
 else
-  info "插件已在 profile 中注册，跳过"
+  warn "未找到桌面目录。可在访达中双击： $REPO_DIR/scripts/start.command"
+  chmod +x "$REPO_DIR/scripts/start.command"
 fi
+chmod +x "$REPO_DIR/scripts/start.sh" "$REPO_DIR/scripts/stop.sh" "$REPO_DIR/scripts/start.command" "$REPO_DIR/scripts/install.sh"
 
-# ---------- 5. 设置 MEETING_BRAIN_REPO（插件托管后端时定位仓库目录） ----------
-# 写入 shell 配置，让 DSH（dsh web 从终端启动）继承该环境变量
-SHELL_RC=""
-if [ -f "$HOME/.zshrc" ]; then SHELL_RC="$HOME/.zshrc";
-elif [ -f "$HOME/.bashrc" ]; then SHELL_RC="$HOME/.bashrc"; fi
-if [ -n "$SHELL_RC" ]; then
-  if ! grep -q "MEETING_BRAIN_REPO" "$SHELL_RC" 2>/dev/null; then
-    echo "export MEETING_BRAIN_REPO=\"$REPO_DIR\"" >> "$SHELL_RC"
-    info "已写入 MEETING_BRAIN_REPO=$REPO_DIR 到 $SHELL_RC（新终端生效）"
-  fi
-  export MEETING_BRAIN_REPO="$REPO_DIR"
-else
-  warn "未找到 shell 配置文件，本次会话设置 MEETING_BRAIN_REPO=$REPO_DIR（重启终端后需手动 export）"
-  export MEETING_BRAIN_REPO="$REPO_DIR"
-fi
+# ---------- 5. 启动并打开浏览器 ----------
+bash "$REPO_DIR/scripts/start.sh"
 
-# ---------- 6. DeepSeek key 提示 ----------
-if [ ! -f "$DSH_HOME/.credentials.yaml" ] || ! grep -q "DEEPSEEK_API_KEY" "$DSH_HOME/.credentials.yaml"; then
-  warn "未检测到 DEEPSEEK_API_KEY（$DSH_HOME/.credentials.yaml）。"
-  warn "AI 问答/深度总结需要它。请手动添加："
-  warn "  DEEPSEEK_API_KEY: sk-xxxx"
-fi
-
-# ---------- 7. 启动后端 ----------
-if curl -s -m 2 "http://127.0.0.1:$BACKEND_PORT/api/health" >/dev/null 2>&1; then
-  info "后端已在运行: http://127.0.0.1:$BACKEND_PORT"
-else
-  info "启动后端（后台）: http://127.0.0.1:$BACKEND_PORT"
-  # 常驻：写日志，nohup 启动
-  mkdir -p "$DSH_HOME/meetings"
-  nohup node "$REPO_DIR/server/index.js" >> "$DSH_HOME/meetings/backend.log" 2>&1 &
-  echo $! > "$DSH_HOME/meetings/backend.pid"
-  sleep 2
-  if curl -s -m 3 "http://127.0.0.1:$BACKEND_PORT/api/health" >/dev/null 2>&1; then
-    info "后端启动成功"
-  else
-    warn "后端启动可能失败，查看日志: tail -f $DSH_HOME/meetings/backend.log"
-  fi
-fi
-
-# ---------- 完成 ----------
 echo
 info "======================================================"
-info "安装完成！"
-info "  1. 浏览器打开 http://127.0.0.1:$BACKEND_PORT"
-info "  2. 打开「同步」确认 DWS 登录后点立即同步"
-info "  3. 在会议详情可修改关键信息、勾选是否上传公司知识库"
-info "  4. DSH 对话仍可调用会议工具；界面不在 DSH tab 上"
+info "安装完成。浏览器应已打开 http://127.0.0.1:3400"
+info "  · 以后使用：双击桌面上的「会议助手」"
+info "  · 设置页填写大模型 API Key（问答/总结用）"
+info "  · 点「更新」拉取钉钉听记（需已完成 dws 登录）"
+info "  · 停止服务：bash scripts/stop.sh"
 info "======================================================"
-echo
-info "常用命令："
-info "  启动后端:  node $REPO_DIR/server/index.js"
-info "  同步听记:  node $REPO_DIR/lib/cli.js pull && node $REPO_DIR/lib/cli.js index"
-info "  查看日志:  tail -f $DSH_HOME/meetings/backend.log"

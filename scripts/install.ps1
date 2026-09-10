@@ -1,90 +1,92 @@
 ﻿# =============================================================================
-# meeting-brain-dashboard 一键安装（Windows）
+# 会议助手 · 本机一键安装（Windows）
 #
-# 用途：给公司同事在本机安装「会议驾驶舱」。
-#   1. 检查 Node.js 与钉钉 DWS CLI
-#   2. 安装本仓库依赖 + 构建 DSH client 插件 bundle
-#   3. 注册插件到 DSH Web profile
-#   4. 启动本地后端（localhost:3400）
+# 1. 检查/安装 Node.js 与钉钉 DWS CLI
+# 2. 安装依赖并构建独立界面
+# 3. 把「会议助手」放到桌面，启动 localhost:3400 并打开浏览器
 #
-# 隐私：所有会议数据只存本机 SQLite；AI 问答/深度总结按配置走 DeepSeek 云端。
-# 使用（PowerShell）：
+# 不依赖 DSH。PowerShell：
 #   powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 # =============================================================================
 $ErrorActionPreference = 'Stop'
-$Green = [char]27 + '[0;32m'; $Yellow = [char]27 + '[1;33m'; $Red = [char]27 + '[0;31m'; $NC = [char]27 + '[0m'
-function Info($m) { Write-Host "$Green[meeting-brain]$NC $m" }
-function Warn($m) { Write-Host "$Yellow[meeting-brain]$NC $m" }
-function Die($m) { Write-Host "$Red[meeting-brain]$NC $m" -ForegroundColor Red; exit 1 }
+if ($PSVersionTable.PSVersion.Major -lt 6) {
+    try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new() } catch {}
+}
 
-# 可靠地执行 npm 全局安装：
-#  - npm 会把 deprecation 等警告写 stderr，PowerShell 5.1 在 $ErrorActionPreference='Stop'
-#    下会把 stderr 行当作 NativeCommandError 抛出，中断脚本。这里临时降级为 Continue，
-#    用 & 执行并显式读 $LASTEXITCODE 判断成败，警告只透传显示、不中断。
-#  - 全局安装后当前会话 PATH 不刷新，命令可能找不到；安装后重新合并 Machine+User PATH。
-function Install-NpmGlobal($pkg) {
+function Info($m) { Write-Host "[会议助手] $m" -ForegroundColor Green }
+function Warn($m) { Write-Host "[会议助手] $m" -ForegroundColor Yellow }
+function Die($m) { Write-Host "[会议助手] $m" -ForegroundColor Red; exit 1 }
+
+function Refresh-Path {
+    $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $user = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $env:Path = "C:\Program Files\nodejs;$machine;$user"
+}
+
+# npm 会把警告写 stderr；PowerShell 5.1 在 Stop 下会当成错误。临时降级。
+function Invoke-Npm {
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$NpmArgs)
     $oldEap = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        & npm install -g $pkg 2>&1 | Out-String | Write-Host
+        & npm @NpmArgs 2>&1 | Out-String | Write-Host
     } finally {
         $ErrorActionPreference = $oldEap
     }
-    # 刷新 PATH（npm 全局 bin 可能不在当前会话 PATH 中）
-    $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
     return $LASTEXITCODE
 }
 
+function Test-NodeOk {
+    if (-not (Get-Command node -ErrorAction SilentlyContinue)) { return $false }
+    $nodeVer = (node -v).Trim()
+    if ($nodeVer -notmatch '^v?(\d+)\.(\d+)') { return $false }
+    $major = [int]$Matches[1]
+    $minor = [int]$Matches[2]
+    return ($major -gt 22) -or ($major -eq 22 -and $minor -ge 5)
+}
+
 $RepoDir = Split-Path -Parent $PSScriptRoot
-$DshHome = if ($env:DSH_HOME) { $env:DSH_HOME } else { Join-Path $HOME '.dsh' }
-$ProfileDir = Join-Path $DshHome 'profiles\web'
-$PackageName = 'meeting-brain-dashboard'
-$BackendPort = if ($env:PORT) { $env:PORT } else { 3400 }
+$DataDir = if ($env:DSH_HOME) { Join-Path $env:DSH_HOME 'meetings' } else { Join-Path $HOME '.dsh\meetings' }
 
 Info "仓库目录: $RepoDir"
-Info "DSH Home: $DshHome"
+Refresh-Path
 
 # ---------- 1. Node.js ----------
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-    Warn "未检测到 Node.js。请从 https://nodejs.org 安装 LTS（>= 22.5）后重试。"
-    Die '需要 Node.js >= 22.5'
+    Warn '未检测到 Node.js，尝试用 winget 安装 LTS…'
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        $oldEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            winget install --id OpenJS.NodeJS.LTS -e --accept-package-agreements --accept-source-agreements --disable-interactivity
+        } finally { $ErrorActionPreference = $oldEap }
+        Refresh-Path
+    }
 }
-# 从 node -v（如 v24.13.0）提取主版本号，避免跨 PowerShell 传参引号问题
-$nodeVer = (node -v).Trim()
-if ($nodeVer -notmatch '^v?(\d+)\.') {
-    Die "无法解析 Node.js 版本：$nodeVer"
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    Die '需要 Node.js ≥ 22.5。请打开 https://nodejs.org 安装 LTS，然后重新运行本脚本。'
 }
-$nodeMajor = [int]$Matches[1]
-if ($nodeMajor -lt 22) {
-    Die "Node.js 版本过低（$nodeVer），需要 >= 22.5。请升级后重试。"
+if (-not (Test-NodeOk)) {
+    Die "Node.js 版本过低（$(node -v)），需要 ≥ 22.5。请升级后重试。"
 }
-Info "Node.js $nodeVer OK"
+Info "Node.js $(node -v) OK"
 
 # ---------- 2. 钉钉 DWS CLI ----------
 if (-not (Get-Command dws -ErrorAction SilentlyContinue)) {
     Warn '未检测到钉钉 DWS CLI，尝试通过 npm 全局安装…'
-    Install-NpmGlobal 'dingtalk-workspace-cli' | Out-Null
-    if (Get-Command dws -ErrorAction SilentlyContinue) {
-        Info 'dws 已安装 OK'
-    } else {
-        Warn 'npm 安装失败（可能网络或权限问题）。请手动安装：'
-        Warn '  方式 A：npm install -g dingtalk-workspace-cli'
-        Warn '  方式 B：官方安装脚本: curl -fsSL https://dws.dingtalk.com/install | bash'
-        Warn '  参考：https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli'
-        Warn '安装完成后重新运行本脚本，并执行: dws auth login'
-    }
+    $null = Invoke-Npm install -g dingtalk-workspace-cli
+    Refresh-Path
 }
 if (Get-Command dws -ErrorAction SilentlyContinue) {
     $dwsVer = (& dws --version 2>$null)
     Info ("DWS " + $(if ($dwsVer) { $dwsVer } else { '已安装' }) + " OK")
-    # 版本升级检查：有新版本时询问用户是否升级（dws 语法随版本变化，升级到最新可避免兼容问题）
     $checkOut = (& dws upgrade --check 2>&1 | Out-String)
     if ($checkOut -match '新版本可用') {
         Write-Host ''
         Warn '检测到 DWS 有新版本可用：'
-        $checkOut -split "`n" | Select-Object -First 12 | ForEach-Object { if ($_ -match '新版本可用|发布日期|v1\.0') { Warn $_ } }
+        $checkOut -split "`n" | Select-Object -First 12 | ForEach-Object { Warn $_ }
         Write-Host ''
-        $upgradeAns = Read-Host '[meeting-brain] 是否现在升级 DWS 到最新版本？(y/N)'
+        $upgradeAns = Read-Host '[会议助手] 是否现在升级 DWS 到最新版本？(y/N)'
         if ($upgradeAns -eq 'y' -or $upgradeAns -eq 'Y') {
             Info '正在升级 DWS…'
             & dws upgrade | Out-String | Write-Host
@@ -93,7 +95,6 @@ if (Get-Command dws -ErrorAction SilentlyContinue) {
             Info "跳过升级（当前 $dwsVer）。若后续同步报命令错误，请先 dws upgrade。"
         }
     }
-    # 登录检测：dws auth status 返回 authenticated。未登录/过期则自动拉起 OAuth 扫码登录。
     $authJson = (& dws auth status 2>$null | Out-String)
     if ($authJson -notmatch '"authenticated": true') {
         Warn '检测到 DWS 未登录或登录已过期，自动打开登录（浏览器弹出钉钉授权，请扫码/确认）…'
@@ -104,147 +105,46 @@ if (Get-Command dws -ErrorAction SilentlyContinue) {
     } else {
         Info 'DWS 已登录 OK'
     }
+} else {
+    Warn 'npm 安装 dws 失败（可能网络或权限问题）。请手动安装：'
+    Warn '  npm install -g dingtalk-workspace-cli'
+    Warn '  参考：https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli'
+    Warn '安装完成后重新运行本脚本，并执行: dws auth login'
 }
 
 # ---------- 3. 安装依赖 + 构建 ----------
-# 每次运行都强制 npm install + build，保证源码与构建产物一致
-# （lib/index.js、lib/client.js 是构建产物、不进 git，git pull 后必须重建）
-Info '安装依赖（首次会下载约 24MB 本地嵌入模型，之后离线可用）…'
+Info '安装依赖…'
 Set-Location $RepoDir
-# devDependencies 含后端运行时依赖（express + transformers），npm 会一并安装
-$oldEap = $ErrorActionPreference
-$ErrorActionPreference = 'Continue'
-try { npm install --no-audit --no-fund 2>&1 | Out-String | Write-Host } finally { $ErrorActionPreference = $oldEap }
-if ($LASTEXITCODE -ne 0) { Die 'npm install 失败，请检查网络后重试。' }
-Info '构建插件 bundle（lib/client.js 驾驶舱 UI + lib/index.js 会议工具）…'
-$oldEap = $ErrorActionPreference
-$ErrorActionPreference = 'Continue'
-try { npm run build 2>&1 | Out-String | Write-Host } finally { $ErrorActionPreference = $oldEap }
-if ($LASTEXITCODE -ne 0) { Die 'npm run build 失败。' }
-
-# ---------- 4. 检测并安装 DSH（DeepSeek Harness） ----------
-# 驾驶舱插件运行在 DSH Web 里；本仓库不包含 DSH 本体，只包含插件。
-# 步骤：装 dsh 全局命令 → 启动一次 dsh web 生成 profile → 本脚本继续注册插件。
-if (-not (Get-Command dsh -ErrorAction SilentlyContinue)) {
-    Warn '未检测到 dsh 命令，尝试通过 npm 全局安装 @deepseek-ai/dsh…'
-    Install-NpmGlobal '@deepseek-ai/dsh' | Out-Null
-    if (-not (Get-Command dsh -ErrorAction SilentlyContinue)) {
-        Write-Host ''
-        Die 'npm 安装 dsh 失败。请手动执行：npm install -g @deepseek-ai/dsh，然后重新运行本脚本。'
-    }
-    Info 'dsh 已安装 OK'
+if ((Invoke-Npm install --no-audit --no-fund) -ne 0) {
+    Die 'npm install 失败，请检查网络后重试。'
 }
-# DSH Web 首次启动后才会生成 profile（插件注册目标）
-if (-not (Test-Path (Join-Path $ProfileDir 'package.json'))) {
-    Write-Host ''
-    Warn ("DSH Web 尚未启动过（缺 profile：" + $ProfileDir + "）。")
-    Warn '请执行以下命令启动 DSH Web（首次启动会生成 profile）：'
-    Write-Host ''
-    Warn '        dsh web'
-    Warn '      或（不想全局安装时）：npx @deepseek-ai/dsh web'
-    Write-Host ''
-    Warn '确认浏览器打开 http://127.0.0.1:3080 看到 DSH 界面后，'
-    Warn '关闭 DSH，再重新运行本脚本。'
-    Write-Host ''
-    Die '请先启动一次 DSH Web 生成 profile，然后重新运行本脚本。'
-}
-Info ("DSH Web profile 已存在（" + $ProfileDir + "）")
-# 注：meeting-brain-dashboard 是「客户端插件 + bundle patch」双角色包——
-#   - package.json 声明 dsh.bundle.patch（cordis.patch.yml 注册插件行到 loader）
-#   - package.json 声明 dsh.client（client-modules 扫描后挂载浏览器 half）
-#   - 零生产依赖：profile 的 pnpm install 不会重复下载 transformers/onnxruntime
-#   - pnpm 的 file: 依赖以硬链接同步整个仓库目录，cordis.patch.yml 自动带上
-# 修复 BOM：PowerShell 5.1 的 Set-Content -Encoding UTF8 会写入 BOM，
-# 而 DSH 的 readProfileManifest 用 JSON.parse 读 package.json，不接受 BOM。
-# 注意：不能用 ReadAllText 检测（它会自动剥离 BOM），必须读原始字节判断。
-$profilePkgPath = Join-Path $ProfileDir 'package.json'
-$profileBytes = [System.IO.File]::ReadAllBytes($profilePkgPath)
-if ($profileBytes.Length -ge 3 -and $profileBytes[0] -eq 0xEF -and $profileBytes[1] -eq 0xBB -and $profileBytes[2] -eq 0xBF) {
-    $profileRaw = [System.Text.Encoding]::UTF8.GetString($profileBytes, 3, $profileBytes.Length - 3)
-    [System.IO.File]::WriteAllText($profilePkgPath, $profileRaw, (New-Object System.Text.UTF8Encoding($false)))
-    Warn '已修复 profile package.json 的 BOM 标记'
-} else {
-    $profileRaw = [System.Text.Encoding]::UTF8.GetString($profileBytes)
-}
-$pkgJson = $profileRaw | ConvertFrom-Json
-if ($null -eq $pkgJson.dependencies -or -not $pkgJson.dependencies.$PackageName) {
-    Info '注册插件到 DSH Web profile…'
-    if ($null -eq $pkgJson.dependencies) { $pkgJson | Add-Member -NotePropertyName dependencies -NotePropertyValue @{} }
-    $pkgJson.dependencies | Add-Member -NotePropertyName $PackageName -NotePropertyValue "file:$RepoDir" -Force
-    if ($null -eq $pkgJson.dsh) { $pkgJson | Add-Member -NotePropertyName dsh -NotePropertyValue @{} }
-    if ($null -eq $pkgJson.dsh.profile) { $pkgJson.dsh | Add-Member -NotePropertyName profile -NotePropertyValue @{} }
-    if ($null -eq $pkgJson.dsh.profile.bundles) { $pkgJson.dsh.profile | Add-Member -NotePropertyName bundles -NotePropertyValue @() }
-    if ($pkgJson.dsh.profile.bundles -notcontains $PackageName) {
-        $pkgJson.dsh.profile.bundles += $PackageName
-    }
-    # 用无 BOM 的 UTF-8 写出（避免 PowerShell Set-Content 加 BOM）
-    $profileJson = $pkgJson | ConvertTo-Json -Depth 10
-    [System.IO.File]::WriteAllText($profilePkgPath, $profileJson, (New-Object System.Text.UTF8Encoding($false)))
-    Info '安装 profile 依赖（pnpm，仅插件本身，秒级完成）…'
-    Push-Location $ProfileDir
-    $oldEap = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-        if (Get-Command pnpm -ErrorAction SilentlyContinue) {
-            pnpm install --no-frozen-lockfile 2>&1 | Out-String | Write-Host
-        } else {
-            npm install --no-audit --no-fund 2>&1 | Out-String | Write-Host
-        }
-    } finally { $ErrorActionPreference = $oldEap }
-    Pop-Location
-} else {
-    Info '插件已在 profile 中注册，跳过'
+Info '构建界面…'
+if ((Invoke-Npm run build) -ne 0) {
+    Die 'npm run build 失败。'
 }
 
-# ---------- 5. 设置 MEETING_BRAIN_REPO（插件托管后端时定位仓库目录） ----------
-try {
-    [Environment]::SetEnvironmentVariable('MEETING_BRAIN_REPO', $RepoDir, 'User')
-    $env:MEETING_BRAIN_REPO = $RepoDir
-    Info ("已设置 MEETING_BRAIN_REPO=" + $RepoDir)
-} catch {
-    Warn '设置 MEETING_BRAIN_REPO 失败（不影响本次安装，插件托管后端时需手动设置）'
-}
+# ---------- 4. 桌面快捷方式 ----------
+New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
+$Desktop = [Environment]::GetFolderPath('Desktop')
+$Wsh = New-Object -ComObject WScript.Shell
+$ShortcutPath = Join-Path $Desktop '会议助手.lnk'
+$Sc = $Wsh.CreateShortcut($ShortcutPath)
+$Sc.TargetPath = 'powershell.exe'
+$Sc.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$RepoDir\scripts\start.ps1`""
+$Sc.WorkingDirectory = $RepoDir
+$Sc.WindowStyle = 7
+$Sc.Description = '打开本机会议助手'
+$Sc.Save()
+Info '已放到桌面：会议助手（以后双击即可）'
 
-# ---------- 6. DeepSeek key 提示 ----------
-$creds = Join-Path $DshHome '.credentials.yaml'
-if (-not (Test-Path $creds) -or -not (Select-String -Path $creds -Pattern 'DEEPSEEK_API_KEY' -Quiet)) {
-    Warn "未检测到 DEEPSEEK_API_KEY（$creds）。"
-    Warn 'AI 问答/深度总结需要它。请手动添加：'
-    Warn '  DEEPSEEK_API_KEY: sk-xxxx'
-}
+# ---------- 5. 启动并打开浏览器 ----------
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoDir 'scripts\start.ps1')
 
-# ---------- 7. 启动后端 ----------
-try {
-    $health = Invoke-RestMethod -Uri "http://127.0.0.1:$BackendPort/api/health" -TimeoutSec 2
-    Info "后端已在运行: http://127.0.0.1:$BackendPort"
-} catch {
-    Info "启动后端（后台）: http://127.0.0.1:$BackendPort"
-    $logDir = Join-Path $DshHome 'meetings'
-    New-Item -ItemType Directory -Force -Path $logDir | Out-Null
-    # Start-Process 要求 stdout/stderr 重定向到不同文件
-    $logOut = Join-Path $logDir 'backend.out.log'
-    $logErr = Join-Path $logDir 'backend.err.log'
-    Start-Process node -ArgumentList @("$RepoDir\server\index.js") -RedirectStandardOutput $logOut -RedirectStandardError $logErr -WindowStyle Hidden
-    Start-Sleep -Seconds 2
-    try {
-        $null = Invoke-RestMethod -Uri "http://127.0.0.1:$BackendPort/api/health" -TimeoutSec 3
-        Info '后端启动成功'
-    } catch {
-        Warn "后端启动可能失败，查看日志: Get-Content $logErr -Tail 20"
-    }
-}
-
-# ---------- 完成 ----------
 Write-Host ''
 Info '======================================================'
-Info '安装完成！'
-Info '  1. 重启 DSH Web GUI（插件注册需重启生效）'
-Info '  2. 打开对话界面 → 顶部「会议驾驶舱」tab'
-Info '  3. 首次使用点击「立即同步」拉取你的钉钉听记'
-Info '  4. 若未同步任何内容：确认已执行 dws auth login 且账号有听记权限'
+Info '安装完成。浏览器应已打开 http://127.0.0.1:3400'
+Info '  · 以后使用：双击桌面上的「会议助手」'
+Info '  · 设置页填写大模型 API Key（问答/总结用）'
+Info '  · 点「更新」拉取钉钉听记（需已完成 dws 登录）'
+Info '  · 停止服务：powershell -ExecutionPolicy Bypass -File scripts\stop.ps1'
 Info '======================================================'
-Write-Host ''
-Info '常用命令：'
-Info "  启动后端:  node $RepoDir\server\index.js"
-Info "  同步听记:  node $RepoDir\lib\cli.js pull ; node $RepoDir\lib\cli.js index"
-Info "  查看日志:  Get-Content $logDir\backend.log -Tail 20"

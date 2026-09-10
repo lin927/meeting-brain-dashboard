@@ -1,64 +1,70 @@
 # 会议助手 · 本机服务
 
 把散落在钉钉 AI 听记里的会议、决策、共识、待办，汇聚成本地可统一检索的「会议资产」。
-**给公司同事在本机安装使用**，每人各装一套、各看各的听记；需要时再把单场会按公司元数据标准上传到云端 RAGFlow。
+每人在自己电脑上各装一套、各看各的听记；需要时再把单场会发布到公司知识库。
 
-界面在 **http://127.0.0.1:3400**，不再挂在 DSH tab 上。DSH / WorkBuddy 等仍可通过本机 API（以及后续 MCP）查询。
+界面：**http://127.0.0.1:3400**（本机浏览器打开，不依赖 DSH）。
 
 ## 隐私边界（请先阅读）
 
 | 环节 | 位置 | 是否本地 |
 |---|---|---|
 | 听记数据存储 | 本机 SQLite（`~/.dsh/meetings/meeting-brain.sqlite`） | ✅ 本机 |
-| 语义嵌入 | bge-small-zh 中文模型（首次联网下载 24MB，之后离线） | ✅ 本机 |
-
-> ⚠️ **模型下载源**：默认从 HuggingFace 主站下载，国内网络可能超时（表现为语义问答报「fetch failed」）。
-> 若首次同步后语义检索失败，设置环境变量走国内镜像：`MEETING_BRAIN_MIRROR=1`（hf-mirror.com），
-> 然后重启后端重试；也可手动把模型缓存放到
-> `node_modules/@huggingface/transformers/.cache/Xenova/bge-small-zh-v1.5/`。
+| 语义嵌入 | bge-small-zh 中文模型（首次联网下载约 24MB，之后离线） | ✅ 本机 |
 | 向量检索 / 待办 / 统计 | 本机计算 | ✅ 本机 |
 | 会议助手界面 | 本机浏览器打开 `localhost:3400` | ✅ 本机 |
-| **AI 问答 / 深度总结** | 会议相关片段发送至 **DeepSeek 云端**生成 | ⚠️ 出网 |
+| **AI 问答 / 深度总结** | 会议相关片段发送至配置的大模型（默认 DeepSeek） | ⚠️ 出网 |
 | **上传公司会议知识库** | 按公司要求写入云端 RAGFlow（需先在界面勾选） | ⚠️ 出网 |
 
-> 若需完全离线（会议内容不出内网），可把后端 AI 调用指向本地 Ollama ——
-> 见文末「完全本地模式」。默认配置维持 DeepSeek 云端（总结质量更高）。
 > 未勾选「允许上传公司知识库」的会议不会离开本机库。
+> 国内网络首次下载嵌入模型可能失败（huggingface.co）；后端会自动改走 hf-mirror 再试。
 
-## 前置条件（每台电脑）
+## 每台电脑需要什么
 
-1. **macOS**（Windows 见 `scripts/install.ps1`，钉钉 DWS 官方支持跨平台）
-2. **Node.js ≥ 22.5**（[nodejs.org](https://nodejs.org)）
-3. **DSH（可选）**：本仓库界面已独立。DSH 仍可注册会议查询工具，供对话里问会议；不是打开界面的前提。
-4. **钉钉 DWS CLI**：脚本会自动安装（`npm install -g dingtalk-workspace-cli`），并自动弹出 `dws auth login` 扫码登录（需账号能访问听记——自己 A1 卡录的 + 他人分享的）。也可手动执行 `dws auth login`
-5. **DeepSeek API Key**：写入 `~/.dsh/.credentials.yaml` 的 `DEEPSEEK_API_KEY: sk-xxx`（AI 问答/深度总结用）
+1. **macOS 或 Windows**
+2. **Node.js ≥ 22.5**（[nodejs.org](https://nodejs.org) LTS）。安装脚本在 Mac 上会尝试用 Homebrew 安装，在 Windows 上会尝试用 winget 安装。
+3. **钉钉 DWS CLI**：脚本会自动安装并弹出扫码登录（需账号能访问听记）。
+4. **大模型 API Key**：装好后在设置页填写（问答/总结用）。不必先改任何 yaml。
 
-## 安装（一键）
+不需要安装 DSH。
+
+## 安装（一次）
+
+把仓库放到本机后，在项目目录执行：
+
+**Mac**
 
 ```bash
-git clone <你的私有仓库地址> meeting-brain-dashboard
-cd meeting-brain-dashboard
-bash scripts/install.sh        # macOS
-# 或 Windows PowerShell：
-# powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+bash scripts/install.sh
 ```
 
-脚本自动完成：检查 Node/DWS → 安装依赖 → 构建独立界面 → 可选注册 DSH 会议工具 → 启动本机服务（localhost:3400）。
+**Windows**（PowerShell）
 
-数据库无需准备：首次「立即同步」时自动创建 `~/.dsh/meetings/meeting-brain.sqlite` 并建表。
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+```
 
-> DSH 仍可通过 `dsh.bundle.patch` 注册 `meeting_brain_ask` 等工具。界面不再作为 DSH client 插件挂载。
+脚本会：检查 Node / 钉钉 DWS → 安装依赖 → 构建界面 → 在桌面放「会议助手」快捷方式 → 启动服务并打开浏览器。
 
-## 使用
+数据库无需准备：首次点「更新」时自动创建。
 
-1. 浏览器打开 **http://127.0.0.1:3400**
-2. 「同步」页确认 DWS 已登录，点「立即同步」拉取钉钉听记
-3. 「会议」里浏览、检索、修改关键信息；需要进公司库的场次勾选「允许上传到公司会议知识库」
-4. 「导入」可粘贴非钉钉纪要/转写
+## 以后怎么用
 
-公司 RAGFlow 的 API、KEY 与会议文档元数据标准开发时再接入；勾选后会先在本机标记为公司可见。
+双击桌面上的 **会议助手**。服务已在运行则直接打开浏览器；否则先启动再打开。
 
-### 词表与深度总结
+| | Mac | Windows |
+|---|---|---|
+| 日常打开 | 双击桌面「会议助手」 | 双击桌面「会议助手」 |
+| 也可以 | `bash scripts/start.sh` | `scripts\start.bat` 或 `powershell -ExecutionPolicy Bypass -File scripts\start.ps1` |
+| 停止服务 | `bash scripts/stop.sh` | `powershell -ExecutionPolicy Bypass -File scripts\stop.ps1` |
+
+关掉浏览器不会关掉后台服务。要停止再跑上面的停止命令。
+
+首次使用：打开 **设置** 填写 API Key，再到会议列表点 **更新** 拉取钉钉听记。
+
+Mac 若双击桌面快捷方式被系统拦截：右键 → 打开。
+
+## 词表与深度总结
 
 AI 深度总结按仓库里的提炼提示词生成，并用本地词表把「勇哥 / 宋总」等称呼落成正式姓名。
 
@@ -81,29 +87,28 @@ AI 深度总结按仓库里的提炼提示词生成，并用本地词表把「�
                                       ├─ lib/db.js    本机 SQLite
                                       ├─ lib/pull.js  拉取听记
                                       ├─ lib/embed.js 本地 bge-small-zh 嵌入
-                                      ├─ lib/ask.js   DeepSeek RAG 语义问答
-                                      └─ /api/publish 标记公司可见 → 云端 RAGFlow（API 待接入）
+                                      ├─ lib/ask.js   大模型 RAG 语义问答
+                                      └─ /api/publish 按类型写入对应 RAGFlow 知识库；撤回则删除该篇
                                               │
-DSH / WorkBuddy / …  ◀── HTTP / 后续 MCP ── 本机服务
+其他助手（可选）  ◀── HTTP / MCP ── 本机服务
 ```
 
 ## 常见问题
 
-- **同步不到听记**：确认 `dws auth login` 已登录、账号有听记权限；查看后端日志 `tail -f ~/.dsh/meetings/backend.log`
-- **打不开界面**：浏览器访问 http://127.0.0.1:3400 ；若失败查看日志并执行 `bash scripts/restart.sh`
-- **DeepSeek key 未生效**：`~/.dsh/.credentials.yaml` 需含 `DEEPSEEK_API_KEY`，改后重启后端
-- **首次同步较慢**：`dws +search` 全量扫描 + 逐条 `+detail`；之后增量很快
-- **AI 深度总结无逐字稿**：该会议可能是语音通话类无转写，或未同步到 transcript
+- **同步不到听记**：确认已 `dws auth login`、账号有听记权限；查看日志 `~/.dsh/meetings/backend.log`（Windows 另有 `backend.err.log`）
+- **打不开界面**：双击「会议助手」，或浏览器访问 http://127.0.0.1:3400
+- **API Key 未生效**：在设置页保存后刷新；改环境变量则需重启服务
+- **首次同步较慢**：`dws` 全量扫描听记；之后增量很快
+- **更新本仓库代码后**：Mac 执行 `bash scripts/restart.sh`；Windows 执行 `powershell -ExecutionPolicy Bypass -File scripts\restart.ps1`
 
 ## 开发
 
 ```bash
 npm install
-npm run build        # 构建 client bundle → lib/client.js
-npm run server       # 启动后端（本地测试）
+npm run build        # 构建 public/app.js
+npm run server       # 仅启动后端（日常请用 scripts/start.sh）
 ```
 
 ## 完全本地模式（可选）
 
-后端 `lib/ask.js` 使用 OpenAI 兼容接口（`DEEPSEEK_BASE_URL` 可覆盖）。把 `DEEPSEEK_BASE_URL` 指向本地 Ollama（如 `http://127.0.0.1:11434/v1`）+ `DEEPSEEK_MODEL=qwen2.5:7b`，
-会议内容即不出内网（需部署机器有足够内存/显存）。
+后端使用 OpenAI 兼容接口。在设置里把接口指到本地 Ollama（如 `http://127.0.0.1:11434/v1`），或设环境变量 `DEEPSEEK_BASE_URL` + `DEEPSEEK_MODEL`，会议内容即不出内网。

@@ -1,7 +1,7 @@
 {
   "name": "meeting-brain-dashboard",
   "version": "0.2.0",
-  "description": "会议智能助手：本机同步钉钉听记、独立 Web 界面、本地向量检索。DSH 等助手通过工具/API 查询，不再把界面挂在 DSH tab 上。",
+  "description": "会议智能助手：本机同步钉钉听记、独立 Web 界面、本地向量检索。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -25,6 +25,8 @@
     "build": "node build.mjs",
     "server": "node server/index.js",
     "server:dev": "node --watch server/index.js",
+    "start": "bash scripts/start.sh",
+    "stop": "bash scripts/stop.sh",
     "install:mac": "bash scripts/install.sh",
     "install:win": "powershell -ExecutionPolicy Bypass -File scripts/install.ps1"
   },
@@ -32,19 +34,15 @@
     "node": ">=22.5"
   },
   "dependencies": {
+    "@huggingface/transformers": "^3.0.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "express": "^4.19.2",
     "zod": "^4.5.4"
   },
   "devDependencies": {
-    "@huggingface/transformers": "^3.0.0",
     "esbuild": "^0.24.0",
-    "express": "^4.19.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
-  },
-  "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.0",
-    "@deepseek-ai/dsh-tools": "*"
   },
   "license": "MIT"
 }

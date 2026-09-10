@@ -1,5 +1,5 @@
 ---
-description: 改完代码后自动编译并重启本机后端与 DSH Web，不要让用户手动启动
+description: 改完代码后自动编译并重启本机会议助手，不要让用户手动启动
 alwaysApply: true
 ---
 
@@ -7,7 +7,7 @@ alwaysApply: true
 
 改完 `src/`、`lib/`、`server/` 或需要用户看到最新会议助手/API 时：
 
-1. 在仓库根执行 `bash scripts/restart.sh`（脚本会 `npm run build`、重启 `localhost:3400` 会议助手、重启 `localhost:3080` 的 DSH Web 工具侧）。
-2. 不要让用户自己执行 `node server/index.js`、`dsh web` 或 `pnpm dsh web`。
-3. 只有用户明确说「先别重启 / 不要动 DSH」时才跳过。
-4. 重启后告知会议助手已就绪（http://127.0.0.1:3400），并提醒刷新浏览器。界面不在 DSH tab 上。
+1. 在仓库根执行 `bash scripts/restart.sh`（脚本会 `npm run build`、重启 `localhost:3400` 会议助手）。不启动、不停止 DSH。
+2. 不要让用户自己执行 `node server/index.js`。
+3. 只有用户明确说「先别重启」时才跳过。
+4. 重启后告知会议助手已就绪（http://127.0.0.1:3400），并提醒刷新浏览器。

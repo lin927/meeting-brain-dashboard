@@ -48,10 +48,15 @@ export function typeLabel(t) {
   return t
 }
 
+export function uploadBtnLabel(type) {
+  if (!type || type === '个人') return ''
+  return '上传到' + type
+}
+
 export function companyMark(m) {
   if (m.visibility !== 'company') return ''
   const t = m.type || m.scope
-  return t && t !== '个人' ? '已到公司 · ' + t : '已到公司'
+  return t && t !== '个人' ? '已到' + t : '已上传'
 }
 
 export function srcLabel(s) {
