@@ -13,13 +13,13 @@ import path from 'node:path'
 import { ask, summarizeTranscript, testLlm } from '../lib/ask.js'
 import { loadGlossary, glossaryForSettings, saveUserNamedList } from '../lib/glossary.js'
 import { indexChunkIds } from '../lib/embed.js'
-import { overview, todosByRange, keywordSearch } from '../lib/overview.js'
+import { overview, todosByRange, keywordSearch, meetingCount } from '../lib/overview.js'
 import {
   meetingDetail, projectTodos, queryMeetings, queryTodos,
   backfillSummaries,
 } from '../lib/overview.js'
 import {
-  open, updateMeetingFields, setMeta, parseTags,
+  open, updateMeetingFields, setMeta, getMeta, parseTags,
   insertAction, updateActionFields, deleteAction, getAction, getMeeting,
   getTodoCats, setTodoCats, saveDeepSummary, saveRecord, saveTranscript, deleteMeetingLocal,
 } from '../lib/db.js'
@@ -125,16 +125,31 @@ app.get('/api/project', async (req, res) => {
 
 // ---------- 同步 ----------
 const AUTO_SYNC_MS = Number(process.env.MEETING_BRAIN_AUTO_SYNC_MS) || 30 * 60 * 1000
-setInterval(() => {
-  runSync().then((r) => {
-    persistSyncResult(r)
-    if (r.success && r.added > 0) console.log(`[auto-sync] ${r.message}`)
-  }).catch((e) => {
+function finishSync(r) {
+  persistSyncResult(r)
+  if (r.success && r.added > 0) console.log(`[auto-sync] ${r.message}`)
+}
+function startSync(opts, reason) {
+  runSync(opts).then(finishSync).catch((e) => {
     console.error('[auto-sync] 异常:', e.message)
-    pushLog('更新', '自动更新异常: ' + e.message, 'error')
+    pushLog('更新', (reason || '自动更新') + '异常: ' + e.message, 'error')
   })
-}, AUTO_SYNC_MS)
-console.log(`[auto-sync] 已启用：每 ${AUTO_SYNC_MS / 60000} 分钟自动同步`)
+}
+setTimeout(() => {
+  try {
+    const db = open()
+    const last = getMeta(db, 'last_sync_json')
+    db.close()
+    if (!last && meetingCount() === 0) {
+      pushLog('更新', '首次启动，开始全量同步')
+      startSync({ full: true }, '首次全量')
+    }
+  } catch (e) {
+    console.error('[auto-sync] 首次检测失败:', e.message)
+  }
+}, 4000)
+setInterval(() => startSync({}, '自动更新'), AUTO_SYNC_MS)
+console.log(`[auto-sync] 已启用：空库首次全量；之后每 ${AUTO_SYNC_MS / 60000} 分钟增量`)
 
 app.get('/api/sync-status', async (req, res) => {
   try {
@@ -145,8 +160,9 @@ app.get('/api/sync-status', async (req, res) => {
   } catch (e) { fail(res, e) }
 })
 
-app.post('/api/sync', async (_req, res) => {
-  const r = await runSync()
+app.post('/api/sync', async (req, res) => {
+  const full = !!(req.body && req.body.full)
+  const r = await runSync({ full })
   persistSyncResult(r)
   ok(res, r)
 })

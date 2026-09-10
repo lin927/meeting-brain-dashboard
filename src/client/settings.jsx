@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { api, fallbackCopy } from './api.js'
-import { KB_DS, LLM_PRESETS, fmtDateTime } from './format.js'
+import { KB_DS, LLM_PRESETS, fmtDateTime, lastSyncLabel } from './format.js'
 import { ConfirmSheet } from './ui.jsx'
 
 const GLOSSARY_TABS = [
@@ -50,6 +50,9 @@ export function SettingsPage(props) {
   const [logs, setLogs] = useState([])
   const [mcpBusy, setMcpBusy] = useState(false)
   const [confirmRotate, setConfirmRotate] = useState(false)
+  const [confirmFull, setConfirmFull] = useState(false)
+  const [syncBusy, setSyncBusy] = useState(false)
+  const [syncSt, setSyncSt] = useState(null)
   useEffect(() => {
     try { sessionStorage.setItem('ma-settings-tab', tab) } catch { /* ignore */ }
   }, [tab])
@@ -73,14 +76,18 @@ export function SettingsPage(props) {
   useEffect(() => {
     api('/api/settings').then(apply).catch((er) => setErr(String(er && er.message || er)))
     api('/api/logs?limit=200').then((r) => setLogs(r.items || [])).catch(() => {})
+    api('/api/sync-status').then(setSyncSt).catch(() => {})
   }, [])
   useEffect(() => {
-    if (tab !== 'logs') return undefined
-    const load = () => api('/api/logs?limit=200').then((r) => setLogs(r.items || [])).catch(() => {})
+    if (tab !== 'logs' && tab !== 'sync' && !syncBusy) return undefined
+    const load = () => {
+      if (tab === 'logs') api('/api/logs?limit=200').then((r) => setLogs(r.items || [])).catch(() => {})
+      api('/api/sync-status?meta=1').then(setSyncSt).catch(() => {})
+    }
     load()
     const t = setInterval(load, 2000)
     return () => clearInterval(t)
-  }, [tab])
+  }, [tab, syncBusy])
   const setKindRows = (kind, next) => {
     if (kind === 'people') setPeople(next)
     else if (kind === 'projects') setProjects(next)
@@ -95,6 +102,15 @@ export function SettingsPage(props) {
     }).catch((er) => {
       toast(String(er && er.message || er)); throw er
     })
+  }
+  const doFullSync = () => {
+    if (syncBusy) return
+    setSyncBusy(true)
+    setConfirmFull(false)
+    api('/api/sync', { full: true }).then((r) => {
+      toast(r.message || '全量完成')
+      setSyncSt((prev) => ({ ...(prev || {}), last: r, syncing: false }))
+    }).catch((er) => toast(String(er && er.message || er))).finally(() => setSyncBusy(false))
   }
   const saveLlm = () => {
     const body = { preset: llm.preset, baseUrl: llm.baseUrl, model: llm.model }
@@ -282,6 +298,27 @@ export function SettingsPage(props) {
         : null}
     </div>
   )
+  const pulling = syncBusy || !!(syncSt && syncSt.syncing)
+  const syncPane = (
+    <div className="page-inner">
+      <h1>听记</h1>
+      <p className="lede">列表上的「更新」只拉本机还没有的，最多 300 场。全量会把钉钉列表里尚未入库的都拉完，可能要较久。</p>
+      <p className="status">{lastSyncLabel(syncSt) ? ('上次：' + lastSyncLabel(syncSt)) : '还没同步过'}</p>
+      <button className="primary" disabled={pulling} onClick={() => setConfirmFull(true)}>{pulling ? '同步中…' : '全量同步'}</button>
+      {confirmFull
+        ? (
+          <ConfirmSheet
+            title="全量同步听记"
+            lede="从钉钉把本机还没有的听记都拉下来。已在本机的不覆盖你改过的记录和逐字稿；本机删过的不会再回来。钉钉未登录会失败。"
+            confirmLabel="开始全量"
+            busy={pulling}
+            onConfirm={doFullSync}
+            onClose={() => { if (!pulling) setConfirmFull(false) }}
+          />
+        )
+        : null}
+    </div>
+  )
   const logsPane = (
     <div className="page-inner log-pane">
       <h1>运行日志</h1>
@@ -301,16 +338,17 @@ export function SettingsPage(props) {
         : <p className="empty">还没有日志。</p>}
     </div>
   )
-  const panes = { people: peoplePane, llm: llmPane, kb: kbPane, mcp: mcpPane, logs: logsPane }
+  const panes = { people: peoplePane, llm: llmPane, kb: kbPane, mcp: mcpPane, sync: syncPane, logs: logsPane }
   const glossaryCount = people.length + projects.length + terms.length
   const llmStatus = (st.llm && st.llm.model) || (st.llm && st.llm.keySet ? '已配' : '未配置')
   const kbStatus = (st.kb && st.kb.filled) ? (st.kb.filled + '/4') : '未填'
   const mcpStatus = mcp.enabled ? '开' : '关'
+  const syncStatusLabel = pulling ? '同步中' : (lastSyncLabel(syncSt) ? '已同步' : '未同步')
   return (
     <div className="settings">
       <aside className="cats">
         <h2>设置</h2>
-        {[['people', '称呼', String(glossaryCount)], ['llm', '模型', llmStatus], ['kb', '公司', kbStatus], ['mcp', 'MCP', mcpStatus], ['logs', '日志', String(logs.length || '')]].map(([id, label, n]) => (
+        {[['people', '称呼', String(glossaryCount)], ['llm', '模型', llmStatus], ['kb', '公司', kbStatus], ['mcp', 'MCP', mcpStatus], ['sync', '听记', syncStatusLabel], ['logs', '日志', String(logs.length || '')]].map(([id, label, n]) => (
           <div className={'cat' + (tab === id ? ' on' : '')} key={id} onClick={() => { setTab(id); setTestMsg('') }}>
             {label + ' '}<span className="n">{n}</span>
           </div>
