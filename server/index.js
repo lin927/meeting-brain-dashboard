@@ -25,7 +25,7 @@ import {
   insertAction, updateActionFields, deleteAction, getAction, getMeeting,
   getTodoCats, setTodoCats, saveDeepSummary, saveRecord, saveTranscript, deleteMeetingLocal,
 } from '../lib/db.js'
-import { setMeetingVisibility, peekCompanyMeeting, testRagflow } from '../lib/publish.js'
+import { setMeetingVisibility, peekCompanyMeeting, testRagflow, repairPublishedMetadata } from '../lib/publish.js'
 import { importMeeting } from '../lib/import-meeting.js'
 import { refreshMeeting } from '../lib/pull.js'
 import { updateDingTalkTitle, updateDingTalkSummary } from '../lib/minutes-write.js'
@@ -579,6 +579,9 @@ server.listen(PORT, HOST, () => {
   pushLog('服务', `已启动 http://${HOST}:${PORT}`)
   try { loadGlossary(); } catch (e) { console.error('[glossary]', e.message); }
   armAutoSync()
+  repairPublishedMetadata().catch((e) => {
+    console.error('[publish] 补写知识库元数据失败:', e && e.message || e)
+  })
 })
 server.on('error', (e) => {
   console.error('❌ 启动失败:', e.message)
