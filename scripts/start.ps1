@@ -1,7 +1,4 @@
 ﻿# Start local meeting assistant (http://127.0.0.1:3400).
-#   powershell -ExecutionPolicy Bypass -File scripts\start.ps1
-#   powershell -ExecutionPolicy Bypass -File scripts\start.ps1 -NoOpen
-#   powershell -ExecutionPolicy Bypass -File scripts\start.ps1 -Restart -NoOpen
 param(
     [switch]$NoOpen,
     [switch]$Restart
@@ -20,18 +17,26 @@ function Die($m) {
 }
 
 function Refresh-Path {
+    $npm = Join-Path $env:APPDATA 'npm'
     $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     $user = [Environment]::GetEnvironmentVariable('Path', 'User')
-    $env:Path = "C:\Program Files\nodejs;$machine;$user"
+    $env:Path = "C:\Program Files\nodejs;$npm;$machine;$user"
 }
 
 function Test-Health([int]$Port) {
-    $old = $ProgressPreference
-    $ProgressPreference = 'SilentlyContinue'
-    $r = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/health" -TimeoutSec 2 -ErrorAction SilentlyContinue
-    $ProgressPreference = $old
-    if ($r -and $r.ok) { return $true }
-    return $false
+    $client = $null
+    try {
+        $client = New-Object System.Net.Sockets.TcpClient
+        $ar = $client.BeginConnect('127.0.0.1', $Port, $null, $null)
+        $ok = $ar.AsyncWaitHandle.WaitOne(400, $false)
+        if ($ok) { $client.EndConnect($ar) }
+        if ($client) { $client.Close() }
+        if ($ok) { return $true }
+        return $false
+    } catch {
+        if ($client) { $client.Close() }
+        return $false
+    }
 }
 
 function Stop-Port([int]$Port, [string]$PidFile) {

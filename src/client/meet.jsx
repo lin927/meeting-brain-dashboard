@@ -101,6 +101,11 @@ export function MeetPage(props) {
     }
     api('/api/sync-status').then((r) => {
       apply(r, false)
+      if (r && r.dws && !r.dws.authenticated) {
+        setTimeout(() => {
+          api('/api/sync-status').then((x) => apply(x, false)).catch(() => {})
+        }, 2500)
+      }
       poll(r && r.syncing ? 2000 : 20000)
     }).catch(() => { poll(20000) })
     kickPoll.current = () => {
@@ -173,12 +178,13 @@ export function MeetPage(props) {
               ? ('钉钉 · ' + (dws.user || '') + (pulling
                 ? (' · ' + (syncProgressLabel(st) || '更新中'))
                 : (lastSyncLabel(st) ? ' · ' + lastSyncLabel(st) : ' · 还没更新过')))
-              : '钉钉未登录'}
+              : (dws.error ? '钉钉状态未知' : '钉钉未登录')}
           </span>
           <div className="tools">
+            <button className="quiet" onClick={doSync} disabled={pulling}>{pulling ? '更新中' : '更新'}</button>
             {dws.authenticated
-              ? <button className="quiet" onClick={doSync} disabled={pulling}>{pulling ? '更新中' : '更新'}</button>
-              : <button className="quiet" onClick={() => toast('请在本机终端执行 dws auth login，完成后点更新')}>登录</button>}
+              ? null
+              : <button className="quiet" onClick={() => toast(dws.error ? '本机已装 DWS，若已登录可直接点更新' : '请在本机终端执行 dws auth login，完成后点更新')}>登录</button>}
             <button className="quiet" onClick={() => setShowImport(true)}>导入</button>
           </div>
         </div>
