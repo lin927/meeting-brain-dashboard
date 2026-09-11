@@ -10,15 +10,27 @@
 # =============================================================================
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSVersion.Major -lt 6) {
-    try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new() } catch {}
+    try {
+        [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+    } catch {
+        # ignore
+    }
 }
 
 function Info($m) { Write-Host "[会议助手] $m" -ForegroundColor Green }
 function Warn($m) { Write-Host "[会议助手] $m" -ForegroundColor Yellow }
-function Die($m) { Write-Host "[会议助手] $m" -ForegroundColor Red; Wait-Enter; exit 1 }
+function Die($m) {
+    Write-Host "[会议助手] $m" -ForegroundColor Red
+    Wait-Enter
+    exit 1
+}
 
 function Wait-Enter([string]$Msg = '按回车关闭本窗口') {
-    try { Read-Host $Msg | Out-Null } catch {}
+    try {
+        Read-Host $Msg | Out-Null
+    } catch {
+        # ignore
+    }
 }
 
 # npm / dws 常把提示写到 stderr；PowerShell 5.1 在 Stop 下会当成错误直接退出（窗口像闪退）。
@@ -26,7 +38,9 @@ function Invoke-NativeText {
     param([scriptblock]$Block)
     $oldEap = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    try { & $Block 2>&1 | Out-String } finally { $ErrorActionPreference = $oldEap }
+    $out = & $Block 2>&1 | Out-String
+    $ErrorActionPreference = $oldEap
+    return $out
 }
 
 function Refresh-Path {
@@ -40,12 +54,10 @@ function Invoke-Npm {
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$NpmArgs)
     $oldEap = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    try {
-        & npm @NpmArgs 2>&1 | Out-String | Write-Host
-    } finally {
-        $ErrorActionPreference = $oldEap
-    }
-    return $LASTEXITCODE
+    & npm @NpmArgs 2>&1 | Out-String | Write-Host
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = $oldEap
+    return $code
 }
 
 function Test-NodeOk {
@@ -69,9 +81,8 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     if (Get-Command winget -ErrorAction SilentlyContinue) {
         $oldEap = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
-        try {
-            winget install --id OpenJS.NodeJS.LTS -e --accept-package-agreements --accept-source-agreements --disable-interactivity
-        } finally { $ErrorActionPreference = $oldEap }
+        winget install --id OpenJS.NodeJS.LTS -e --accept-package-agreements --accept-source-agreements --disable-interactivity
+        $ErrorActionPreference = $oldEap
         Refresh-Path
     }
 }
@@ -150,7 +161,15 @@ $Sc.Save()
 Info '已放到桌面：会议助手（以后双击即可）'
 
 # ---------- 5. 启动并打开浏览器 ----------
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoDir 'scripts\start.ps1')
+$startScript = Join-Path $RepoDir 'scripts\start.ps1'
+$oldEap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+& powershell -NoProfile -ExecutionPolicy Bypass -File $startScript
+$startExit = $LASTEXITCODE
+$ErrorActionPreference = $oldEap
+if ($startExit -ne 0) {
+    Die '启动失败。可再执行: powershell -ExecutionPolicy Bypass -File scripts\start.ps1'
+}
 
 Write-Host ''
 Info '======================================================'

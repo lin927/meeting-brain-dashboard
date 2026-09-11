@@ -10,11 +10,26 @@ param(
 
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSVersion.Major -lt 6) {
-    try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new() } catch {}
+    try {
+        [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+    } catch {
+        # ignore
+    }
 }
 
-function Info($m) { Write-Host "[会议助手] $m" }
-function Die($m) { Write-Host "[会议助手] $m" -ForegroundColor Red; try { Read-Host '按回车关闭' | Out-Null } catch {}; exit 1 }
+function Info($m) {
+    Write-Host "[会议助手] $m"
+}
+
+function Die($m) {
+    Write-Host "[会议助手] $m" -ForegroundColor Red
+    try {
+        Read-Host '按回车关闭' | Out-Null
+    } catch {
+        # ignore
+    }
+    exit 1
+}
 
 function Refresh-Path {
     $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
@@ -47,8 +62,10 @@ function Stop-Port([int]$Port, [string]$PidFile) {
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     try {
         Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
-            ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
-    } catch {}
+            ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    } catch {
+        # ignore
+    }
 }
 
 $RepoDir = Split-Path -Parent $PSScriptRoot
@@ -77,16 +94,19 @@ if (-not (Test-Health $Port)) {
         Push-Location $RepoDir
         $oldEap = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
-        try { npm run build 2>&1 | Out-String | Write-Host } finally { $ErrorActionPreference = $oldEap }
-        if ($LASTEXITCODE -ne 0) { Die '构建失败' }
+        & npm run build 2>&1 | Out-String | Write-Host
+        $buildExit = $LASTEXITCODE
+        $ErrorActionPreference = $oldEap
+        if ($buildExit -ne 0) { Die '构建失败' }
         Pop-Location
     }
     Info "正在启动本机服务 $Url"
     $node = (Get-Command node).Source
     $server = Join-Path $RepoDir 'server\index.js'
+    # 重定向输出时不能再用 WindowStyle，否则部分 Windows 会启动失败。
     $proc = Start-Process -FilePath $node -ArgumentList @($server) -WorkingDirectory $RepoDir `
         -RedirectStandardOutput $LogOut -RedirectStandardError $LogErr `
-        -WindowStyle Minimized -PassThru
+        -WindowStyle Hidden -PassThru
     Set-Content -Path $PidFile -Value $proc.Id -Encoding ASCII
     $ok = $false
     for ($i = 0; $i -lt 40; $i++) {
