@@ -12,6 +12,8 @@ import path from 'node:path'
 
 import { ask, summarizeTranscript, testLlm } from '../lib/ask.js'
 import { loadGlossary, glossaryForSettings, saveUserNamedList } from '../lib/glossary.js'
+import { projectPatch } from '../lib/project.js'
+import { importProjectsFromCsv } from '../lib/project-csv.js'
 import { indexChunkIds } from '../lib/embed.js'
 import { overview, todosByRange, keywordSearch, meetingCount } from '../lib/overview.js'
 import {
@@ -233,14 +235,16 @@ app.patch('/api/meeting', async (req, res) => {
       : (req.body.deep_summary !== undefined ? req.body.deep_summary : undefined)
     const hasSummary = req.body.summary !== undefined
     const hasTranscript = req.body.transcript !== undefined
-    if (Object.keys(fields).length === 0 && deepIn === undefined && !hasSummary && !hasTranscript) {
-      return fail(res, new Error('没有可更新字段'))
-    }
     const db = open()
     const m = getMeeting(db, id)
     if (!m) { db.close(); return fail(res, new Error('未找到会议')) }
-    const wasCompany = (m.visibility || 'private') === 'company' || !!m.company_doc_id
     const nextType = fields.scope !== undefined ? fields.scope : normalizeType(m.scope)
+    Object.assign(fields, projectPatch(req.body, nextType, loadGlossary()))
+    if (Object.keys(fields).length === 0 && deepIn === undefined && !hasSummary && !hasTranscript) {
+      db.close()
+      return fail(res, new Error('没有可更新字段'))
+    }
+    const wasCompany = (m.visibility || 'private') === 'company' || !!m.company_doc_id
     const typeChanged = fields.scope !== undefined && nextType !== normalizeType(m.scope)
     if (fields.scope === '个人' && wasCompany) {
       fields.visibility = 'private'
@@ -501,6 +505,16 @@ app.post('/api/settings', async (req, res) => {
       else if (body.mcp.enabled !== undefined) setMcpEnabled(!!body.mcp.enabled, PORT)
     }
     ok(res, settingsPayload())
+  } catch (e) { fail(res, e) }
+})
+
+app.post('/api/settings/projects-import', async (req, res) => {
+  try {
+    const csv = String((req.body && req.body.csv) || '')
+    if (!csv.trim()) return res.status(400).json({ error: '没有读到 CSV 内容' })
+    const r = importProjectsFromCsv(csv)
+    if (r.error) return res.status(400).json({ error: r.error })
+    ok(res, { ...settingsPayload(), import: { added: r.added, updated: r.updated, skipped: r.skipped, total: r.total } })
   } catch (e) { fail(res, e) }
 })
 
