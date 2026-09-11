@@ -7,7 +7,7 @@ import { Md, useDebounced } from './ui.jsx'
 import { ImportSheet, MeetingDetail } from './meeting-detail.jsx'
 
 export function MeetPage(props) {
-  const { selected, setSelected, toast, goLedger } = props
+  const { selected, setSelected, toast, goLedger, active } = props
   const [items, setItems] = useState(null)
   const [total, setTotal] = useState(0)
   const [nextCursor, setNextCursor] = useState(null)
@@ -262,6 +262,7 @@ export function MeetPage(props) {
             <MeetingDetail
               key={currentId}
               uuid={currentId}
+              active={!!active}
               meetTag={meetTag}
               toast={toast}
               onTag={(t) => setMeetTag(meetTag === t ? '' : t)}
