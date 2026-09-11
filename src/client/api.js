@@ -62,9 +62,10 @@ export async function api(path, body, method) {
   if (base === null) throw new Error('无法连接本地会议后端（3400-3404 均无响应），请确认后端已启动')
   const url = base + path
   const verb = method || (body === undefined ? 'GET' : 'POST')
+  const timeoutMs = verb === 'GET' ? 20000 : 180000
   const res = await fetchGlobal()(url, body === undefined
-    ? { method: verb }
-    : { method: verb, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    ? { method: verb, signal: AbortSignal.timeout(timeoutMs) }
+    : { method: verb, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs) })
   if (!res.ok) {
     const t = await res.text().catch(() => '')
     let msg = `后端错误 ${res.status}`

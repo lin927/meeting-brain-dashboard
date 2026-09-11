@@ -27,7 +27,7 @@ import { setMeetingVisibility, peekCompanyMeeting, testRagflow } from '../lib/pu
 import { importMeeting } from '../lib/import-meeting.js'
 import { updateDingTalkTitle } from '../lib/minutes-write.js'
 import { syncStatus } from '../lib/sync-status.js'
-import { runSync, persistSyncResult, isSyncing } from '../lib/sync-run.js'
+import { persistSyncResult, isSyncing, syncProgress, enqueueSync } from '../lib/sync-run.js'
 import { listLogs, pushLog } from '../lib/runtime-log.js'
 import { getMcpState, setMcpEnabled, rotateMcpToken, mcpIsEnabled, bearerMatches } from '../lib/mcp-config.js'
 import { handleMcpHttp } from '../lib/mcp-server.js'
@@ -130,31 +130,37 @@ function finishSync(r) {
   if (r.success && r.added > 0) console.log(`[auto-sync] ${r.message}`)
 }
 function startSync(opts, reason) {
-  runSync(opts).then(finishSync).catch((e) => {
+  const kicked = enqueueSync(opts)
+  if (!kicked.started) return false
+  kicked.done.then(finishSync).catch((e) => {
     console.error('[auto-sync] 异常:', e.message)
     pushLog('更新', (reason || '自动更新') + '异常: ' + e.message, 'error')
   })
+  return true
 }
-setTimeout(() => {
-  try {
-    const db = open()
-    const last = getMeta(db, 'last_sync_json')
-    db.close()
-    if (!last && meetingCount() === 0) {
-      pushLog('更新', '首次启动，开始全量同步')
-      startSync({ full: true }, '首次全量')
+function armAutoSync() {
+  setTimeout(() => {
+    try {
+      const db = open()
+      const last = getMeta(db, 'last_sync_json')
+      db.close()
+      if (!last && meetingCount() === 0) {
+        pushLog('更新', '首次启动，开始全量同步')
+        startSync({ full: true }, '首次全量')
+      }
+    } catch (e) {
+      console.error('[auto-sync] 首次检测失败:', e.message)
     }
-  } catch (e) {
-    console.error('[auto-sync] 首次检测失败:', e.message)
-  }
-}, 4000)
-setInterval(() => startSync({}, '自动更新'), AUTO_SYNC_MS)
-console.log(`[auto-sync] 已启用：空库首次全量；之后每 ${AUTO_SYNC_MS / 60000} 分钟增量`)
+  }, 8000)
+  setInterval(() => startSync({}, '自动更新'), AUTO_SYNC_MS)
+  console.log(`[auto-sync] 已启用：空库首次全量；之后每 ${AUTO_SYNC_MS / 60000} 分钟增量`)
+}
 
 app.get('/api/sync-status', async (req, res) => {
   try {
     ok(res, await syncStatus({
       syncing: isSyncing(),
+      progress: syncProgress(),
       skipDws: String(req.query.meta || '') === '1',
     }))
   } catch (e) { fail(res, e) }
@@ -162,9 +168,17 @@ app.get('/api/sync-status', async (req, res) => {
 
 app.post('/api/sync', async (req, res) => {
   const full = !!(req.body && req.body.full)
-  const r = await runSync({ full })
-  persistSyncResult(r)
-  ok(res, r)
+  if (isSyncing()) {
+    return ok(res, {
+      success: true, started: false, syncing: true, full,
+      message: '正在同步中…页面可继续用',
+    })
+  }
+  startSync({ full }, full ? '全量' : '更新')
+  ok(res, {
+    success: true, started: true, syncing: true, full,
+    message: full ? '开始全量同步，页面可继续用' : '开始更新，页面可继续用',
+  })
 })
 
 // ---------- AI ----------
@@ -472,6 +486,7 @@ server.listen(PORT, HOST, () => {
   console.log(`✅ meeting-brain 已启动: http://${HOST}:${PORT}  （界面与 API 同源）`)
   pushLog('服务', `已启动 http://${HOST}:${PORT}`)
   try { loadGlossary(); } catch (e) { console.error('[glossary]', e.message); }
+  armAutoSync()
 })
 server.on('error', (e) => {
   console.error('❌ 启动失败:', e.message)

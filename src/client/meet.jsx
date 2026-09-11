@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { api, qs } from './api.js'
 import {
-  MEET_PAGE, companyMark, fmtShort, groupMonths, lastSyncLabel, lastSyncTitle, srcLabel,
+  MEET_PAGE, companyMark, fmtShort, groupMonths, lastSyncLabel, lastSyncTitle, srcLabel, syncProgressLabel,
 } from './format.js'
 import { Md, useDebounced } from './ui.jsx'
 import { ImportSheet, MeetingDetail } from './meeting-detail.jsx'
@@ -28,6 +28,9 @@ export function MeetPage(props) {
   const qDebounced = useDebounced(meetQuery, 280)
   const reqId = useRef(0)
   const seenSyncAt = useRef(null)
+  const expectSync = useRef(false)
+  const syncMark = useRef(0)
+  const kickPoll = useRef(null)
 
   const fetchPage = useCallback((opts = {}) => {
     const id = ++reqId.current
@@ -58,12 +61,23 @@ export function MeetPage(props) {
   useEffect(() => { fetchPage() }, [fetchPage, tick])
   useEffect(() => {
     let stop = false
+    let timer = 0
     const apply = (r, fromPoll) => {
       if (stop || !r) return
       setSt((prev) => {
         if (!fromPoll || !prev) return r.dws ? r : { ...r, dws: (prev && prev.dws) || r.dws }
         return { ...prev, ...r, dws: prev.dws || r.dws }
       })
+      if (r.syncing) setSyncing(true)
+      else if (fromPoll && expectSync.current) {
+        const lastAt = (r.last && r.last.at) || 0
+        if (lastAt >= syncMark.current) {
+          expectSync.current = false
+          setSyncing(false)
+        }
+      } else if (fromPoll) {
+        setSyncing(false)
+      }
       const at = r.last && r.last.at
       if (!at) return
       const prevAt = seenSyncAt.current
@@ -76,14 +90,34 @@ export function MeetPage(props) {
         toast(r.last.message || '自动更新失败')
       }
     }
-    api('/api/sync-status').then((r) => apply(r, false)).catch(() => {})
-    const poll = () => api('/api/sync-status?meta=1').then((r) => apply(r, true)).catch(() => {})
-    const t = setInterval(poll, 20000)
-    const onVis = () => { if (document.visibilityState === 'visible') poll() }
+    const poll = (ms) => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        api('/api/sync-status?meta=1').then((r) => {
+          apply(r, true)
+          poll(r && (r.syncing || expectSync.current) ? 2000 : 20000)
+        }).catch(() => { poll(20000) })
+      }, ms)
+    }
+    api('/api/sync-status').then((r) => {
+      apply(r, false)
+      poll(r && r.syncing ? 2000 : 20000)
+    }).catch(() => { poll(20000) })
+    kickPoll.current = () => {
+      clearTimeout(timer)
+      api('/api/sync-status?meta=1').then((r) => {
+        apply(r, true)
+        poll(r && (r.syncing || expectSync.current) ? 2000 : 20000)
+      }).catch(() => { poll(2000) })
+    }
+    const onVis = () => {
+      if (document.visibilityState !== 'visible') return
+      api('/api/sync-status?meta=1').then((r) => apply(r, true)).catch(() => {})
+    }
     document.addEventListener('visibilitychange', onVis)
     return () => {
       stop = true
-      clearInterval(t)
+      clearTimeout(timer)
       document.removeEventListener('visibilitychange', onVis)
     }
   }, [toast])
@@ -91,12 +125,17 @@ export function MeetPage(props) {
   const doSync = () => {
     if (syncing) return
     setSyncing(true)
+    expectSync.current = true
+    syncMark.current = Date.now()
     api('/api/sync', {}).then((r) => {
-      toast(r.message || '听记已更新')
-      if (r && r.at) seenSyncAt.current = r.at
-      setSt((prev) => ({ ...(prev || {}), last: r, syncing: false }))
-      setTick((n) => n + 1)
-    }).catch((er) => toast(String(er && er.message || er))).finally(() => setSyncing(false))
+      toast(r.message || '开始更新')
+      setSt((prev) => ({ ...(prev || {}), syncing: true }))
+      if (kickPoll.current) kickPoll.current()
+    }).catch((er) => {
+      expectSync.current = false
+      toast(String(er && er.message || er))
+      setSyncing(false)
+    })
   }
   const doAsk = () => {
     if (!askQ.trim() || asking) return
@@ -131,7 +170,9 @@ export function MeetPage(props) {
         <div className="intake">
           <span className="intake-st" title={lastSyncTitle(st) || undefined}>
             {dws.authenticated
-              ? ('钉钉 · ' + (dws.user || '') + (lastSyncLabel(st) ? ' · ' + lastSyncLabel(st) : ' · 还没更新过'))
+              ? ('钉钉 · ' + (dws.user || '') + (pulling
+                ? (' · ' + (syncProgressLabel(st) || '更新中'))
+                : (lastSyncLabel(st) ? ' · ' + lastSyncLabel(st) : ' · 还没更新过')))
               : '钉钉未登录'}
           </span>
           <div className="tools">

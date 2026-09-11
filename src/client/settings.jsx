@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { api, fallbackCopy } from './api.js'
-import { KB_DS, LLM_PRESETS, fmtDateTime, lastSyncLabel } from './format.js'
+import { KB_DS, LLM_PRESETS, fmtDateTime, lastSyncLabel, syncProgressLabel } from './format.js'
 import { ConfirmSheet } from './ui.jsx'
 
 const GLOSSARY_TABS = [
@@ -53,6 +53,8 @@ export function SettingsPage(props) {
   const [confirmFull, setConfirmFull] = useState(false)
   const [syncBusy, setSyncBusy] = useState(false)
   const [syncSt, setSyncSt] = useState(null)
+  const waitSync = useRef(false)
+  const syncStartedAt = useRef(0)
   useEffect(() => {
     try { sessionStorage.setItem('ma-settings-tab', tab) } catch { /* ignore */ }
   }, [tab])
@@ -82,12 +84,20 @@ export function SettingsPage(props) {
     if (tab !== 'logs' && tab !== 'sync' && !syncBusy) return undefined
     const load = () => {
       if (tab === 'logs') api('/api/logs?limit=200').then((r) => setLogs(r.items || [])).catch(() => {})
-      api('/api/sync-status?meta=1').then(setSyncSt).catch(() => {})
+      api('/api/sync-status?meta=1').then((r) => {
+        setSyncSt(r)
+        if (!waitSync.current || !r || r.syncing) return
+        const lastAt = (r.last && r.last.at) || 0
+        if (lastAt < syncStartedAt.current) return
+        waitSync.current = false
+        setSyncBusy(false)
+        if (r.last && r.last.message) toast(r.last.message)
+      }).catch(() => {})
     }
     load()
     const t = setInterval(load, 2000)
     return () => clearInterval(t)
-  }, [tab, syncBusy])
+  }, [tab, syncBusy, toast])
   const setKindRows = (kind, next) => {
     if (kind === 'people') setPeople(next)
     else if (kind === 'projects') setProjects(next)
@@ -107,10 +117,16 @@ export function SettingsPage(props) {
     if (syncBusy) return
     setSyncBusy(true)
     setConfirmFull(false)
+    waitSync.current = true
+    syncStartedAt.current = Date.now()
     api('/api/sync', { full: true }).then((r) => {
-      toast(r.message || '全量完成')
-      setSyncSt((prev) => ({ ...(prev || {}), last: r, syncing: false }))
-    }).catch((er) => toast(String(er && er.message || er))).finally(() => setSyncBusy(false))
+      toast(r.message || '开始全量同步')
+      setSyncSt((prev) => ({ ...(prev || {}), syncing: true }))
+    }).catch((er) => {
+      waitSync.current = false
+      toast(String(er && er.message || er))
+      setSyncBusy(false)
+    })
   }
   const saveLlm = () => {
     const body = { preset: llm.preset, baseUrl: llm.baseUrl, model: llm.model }
@@ -302,8 +318,12 @@ export function SettingsPage(props) {
   const syncPane = (
     <div className="page-inner">
       <h1>听记</h1>
-      <p className="lede">列表上的「更新」只拉本机还没有的，最多 300 场。全量会把钉钉列表里尚未入库的都拉完，可能要较久。</p>
-      <p className="status">{lastSyncLabel(syncSt) ? ('上次：' + lastSyncLabel(syncSt)) : '还没同步过'}</p>
+      <p className="lede">列表上的「更新」只拉本机还没有的，最多 300 场。全量会把钉钉列表里尚未入库的都拉完，可能要较久，但在后台跑，网页可以继续用。</p>
+      <p className="status">{
+        pulling
+          ? (syncProgressLabel(syncSt) || '同步中…页面可继续用')
+          : (lastSyncLabel(syncSt) ? ('上次：' + lastSyncLabel(syncSt)) : '还没同步过')
+      }</p>
       <button className="primary" disabled={pulling} onClick={() => setConfirmFull(true)}>{pulling ? '同步中…' : '全量同步'}</button>
       {confirmFull
         ? (

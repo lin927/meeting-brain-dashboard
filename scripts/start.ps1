@@ -14,7 +14,7 @@ if ($PSVersionTable.PSVersion.Major -lt 6) {
 }
 
 function Info($m) { Write-Host "[会议助手] $m" }
-function Die($m) { Write-Host "[会议助手] $m" -ForegroundColor Red; exit 1 }
+function Die($m) { Write-Host "[会议助手] $m" -ForegroundColor Red; try { Read-Host '按回车关闭' | Out-Null } catch {}; exit 1 }
 
 function Refresh-Path {
     $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
@@ -86,7 +86,7 @@ if (-not (Test-Health $Port)) {
     $server = Join-Path $RepoDir 'server\index.js'
     $proc = Start-Process -FilePath $node -ArgumentList @($server) -WorkingDirectory $RepoDir `
         -RedirectStandardOutput $LogOut -RedirectStandardError $LogErr `
-        -WindowStyle Hidden -PassThru
+        -WindowStyle Minimized -PassThru
     Set-Content -Path $PidFile -Value $proc.Id -Encoding ASCII
     $ok = $false
     for ($i = 0; $i -lt 40; $i++) {

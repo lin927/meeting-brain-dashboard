@@ -76,6 +76,19 @@ export function lastSyncLabel(st) {
   return [t, msg].filter(Boolean).join(' · ')
 }
 
+export function syncProgressLabel(st) {
+  const p = st && st.progress
+  if (!p) return ''
+  if (p.phase === 'list') return '正在列出听记…'
+  if (p.phase === 'index') return '正在建立索引…'
+  if (p.phase === 'pull' && p.total) {
+    const n = (p.current || 0) + '/' + p.total
+    const title = String(p.title || '').trim()
+    return title ? ('已拉 ' + n + ' · ' + title) : ('已拉 ' + n)
+  }
+  return '同步中…'
+}
+
 export function lastSyncTitle(st) {
   if (!st || !st.last) return ''
   const t = st.last.at ? fmtDateTime(st.last.at) : ''

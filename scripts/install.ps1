@@ -15,7 +15,19 @@ if ($PSVersionTable.PSVersion.Major -lt 6) {
 
 function Info($m) { Write-Host "[会议助手] $m" -ForegroundColor Green }
 function Warn($m) { Write-Host "[会议助手] $m" -ForegroundColor Yellow }
-function Die($m) { Write-Host "[会议助手] $m" -ForegroundColor Red; exit 1 }
+function Die($m) { Write-Host "[会议助手] $m" -ForegroundColor Red; Wait-Enter; exit 1 }
+
+function Wait-Enter([string]$Msg = '按回车关闭本窗口') {
+    try { Read-Host $Msg | Out-Null } catch {}
+}
+
+# npm / dws 常把提示写到 stderr；PowerShell 5.1 在 Stop 下会当成错误直接退出（窗口像闪退）。
+function Invoke-NativeText {
+    param([scriptblock]$Block)
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $Block 2>&1 | Out-String } finally { $ErrorActionPreference = $oldEap }
+}
 
 function Refresh-Path {
     $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
@@ -78,9 +90,9 @@ if (-not (Get-Command dws -ErrorAction SilentlyContinue)) {
     Refresh-Path
 }
 if (Get-Command dws -ErrorAction SilentlyContinue) {
-    $dwsVer = (& dws --version 2>$null)
+    $dwsVer = (Invoke-NativeText { & dws --version }).Trim()
     Info ("DWS " + $(if ($dwsVer) { $dwsVer } else { '已安装' }) + " OK")
-    $checkOut = (& dws upgrade --check 2>&1 | Out-String)
+    $checkOut = Invoke-NativeText { & dws upgrade --check }
     if ($checkOut -match '新版本可用') {
         Write-Host ''
         Warn '检测到 DWS 有新版本可用：'
@@ -89,16 +101,16 @@ if (Get-Command dws -ErrorAction SilentlyContinue) {
         $upgradeAns = Read-Host '[会议助手] 是否现在升级 DWS 到最新版本？(y/N)'
         if ($upgradeAns -eq 'y' -or $upgradeAns -eq 'Y') {
             Info '正在升级 DWS…'
-            & dws upgrade | Out-String | Write-Host
+            Invoke-NativeText { & dws upgrade } | Write-Host
             if ($LASTEXITCODE -ne 0) { Warn 'dws upgrade 未完成，可稍后手动执行: dws upgrade' }
         } else {
             Info "跳过升级（当前 $dwsVer）。若后续同步报命令错误，请先 dws upgrade。"
         }
     }
-    $authJson = (& dws auth status 2>$null | Out-String)
+    $authJson = Invoke-NativeText { & dws auth status }
     if ($authJson -notmatch '"authenticated": true') {
         Warn '检测到 DWS 未登录或登录已过期，自动打开登录（浏览器弹出钉钉授权，请扫码/确认）…'
-        & dws auth login | Out-String | Write-Host
+        Invoke-NativeText { & dws auth login } | Write-Host
         if ($LASTEXITCODE -ne 0) {
             Warn 'dws auth login 未完成，可稍后手动执行: dws auth login'
         }
@@ -147,4 +159,6 @@ Info '  · 以后使用：双击桌面上的「会议助手」'
 Info '  · 设置页填写大模型 API Key（问答/总结用）'
 Info '  · 点「更新」拉取钉钉听记（需已完成 dws 登录）'
 Info '  · 停止服务：powershell -ExecutionPolicy Bypass -File scripts\stop.ps1'
+Info '  · 不要用 node server/index.js 当日常启动（请用桌面快捷方式或 start.ps1）'
 Info '======================================================'
+Wait-Enter
