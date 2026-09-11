@@ -1,5 +1,4 @@
-# 启动本机会议助手（http://127.0.0.1:3400）。已在运行则只打开浏览器。
-# 用法：
+﻿# Start local meeting assistant (http://127.0.0.1:3400).
 #   powershell -ExecutionPolicy Bypass -File scripts\start.ps1
 #   powershell -ExecutionPolicy Bypass -File scripts\start.ps1 -NoOpen
 #   powershell -ExecutionPolicy Bypass -File scripts\start.ps1 -Restart -NoOpen
@@ -9,13 +8,6 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-if ($PSVersionTable.PSVersion.Major -lt 6) {
-    try {
-        [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
-    } catch {
-        # ignore
-    }
-}
 
 function Info($m) {
     Write-Host "[会议助手] $m"
@@ -23,11 +15,7 @@ function Info($m) {
 
 function Die($m) {
     Write-Host "[会议助手] $m" -ForegroundColor Red
-    try {
-        Read-Host '按回车关闭' | Out-Null
-    } catch {
-        # ignore
-    }
+    cmd /c pause
     exit 1
 }
 
@@ -38,15 +26,12 @@ function Refresh-Path {
 }
 
 function Test-Health([int]$Port) {
-    try {
-        $old = $ProgressPreference
-        $ProgressPreference = 'SilentlyContinue'
-        $null = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/health" -TimeoutSec 2
-        $ProgressPreference = $old
-        return $true
-    } catch {
-        return $false
-    }
+    $old = $ProgressPreference
+    $ProgressPreference = 'SilentlyContinue'
+    $r = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/health" -TimeoutSec 2 -ErrorAction SilentlyContinue
+    $ProgressPreference = $old
+    if ($r -and $r.ok) { return $true }
+    return $false
 }
 
 function Stop-Port([int]$Port, [string]$PidFile) {
@@ -58,14 +43,10 @@ function Stop-Port([int]$Port, [string]$PidFile) {
         Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
     }
     Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -and $_.CommandLine -match 'server\\index\.js|server/index\.js' } |
+        Where-Object { $_.CommandLine -and ($_.CommandLine -like '*server\index.js*' -or $_.CommandLine -like '*server/index.js*') } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-    try {
-        Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
-            ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-    } catch {
-        # ignore
-    }
+    Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+        ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
 }
 
 $RepoDir = Split-Path -Parent $PSScriptRoot
@@ -94,7 +75,12 @@ if (-not (Test-Health $Port)) {
         Push-Location $RepoDir
         $oldEap = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
-        & npm run build 2>&1 | Out-String | Write-Host
+        $npmCmd = Get-Command npm.cmd -ErrorAction SilentlyContinue
+        if ($npmCmd) {
+            & npm.cmd run build
+        } else {
+            & npm run build
+        }
         $buildExit = $LASTEXITCODE
         $ErrorActionPreference = $oldEap
         if ($buildExit -ne 0) { Die '构建失败' }
@@ -103,10 +89,7 @@ if (-not (Test-Health $Port)) {
     Info "正在启动本机服务 $Url"
     $node = (Get-Command node).Source
     $server = Join-Path $RepoDir 'server\index.js'
-    # 重定向输出时不能再用 WindowStyle，否则部分 Windows 会启动失败。
-    $proc = Start-Process -FilePath $node -ArgumentList @($server) -WorkingDirectory $RepoDir `
-        -RedirectStandardOutput $LogOut -RedirectStandardError $LogErr `
-        -WindowStyle Hidden -PassThru
+    $proc = Start-Process -FilePath $node -ArgumentList @($server) -WorkingDirectory $RepoDir -RedirectStandardOutput $LogOut -RedirectStandardError $LogErr -WindowStyle Hidden -PassThru
     Set-Content -Path $PidFile -Value $proc.Id -Encoding ASCII
     $ok = $false
     for ($i = 0; $i -lt 40; $i++) {

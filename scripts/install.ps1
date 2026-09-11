@@ -152,8 +152,8 @@ $Desktop = [Environment]::GetFolderPath('Desktop')
 $Wsh = New-Object -ComObject WScript.Shell
 $ShortcutPath = Join-Path $Desktop '会议助手.lnk'
 $Sc = $Wsh.CreateShortcut($ShortcutPath)
-$Sc.TargetPath = 'powershell.exe'
-$Sc.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$RepoDir\scripts\start.ps1`""
+$Sc.TargetPath = Join-Path $RepoDir 'scripts\start.bat'
+$Sc.Arguments = ''
 $Sc.WorkingDirectory = $RepoDir
 $Sc.WindowStyle = 7
 $Sc.Description = '打开本机会议助手'
@@ -161,14 +161,14 @@ $Sc.Save()
 Info '已放到桌面：会议助手（以后双击即可）'
 
 # ---------- 5. 启动并打开浏览器 ----------
-$startScript = Join-Path $RepoDir 'scripts\start.ps1'
+$startBat = Join-Path $RepoDir 'scripts\start.bat'
 $oldEap = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
-& powershell -NoProfile -ExecutionPolicy Bypass -File $startScript
+cmd.exe /c "`"$startBat`""
 $startExit = $LASTEXITCODE
 $ErrorActionPreference = $oldEap
 if ($startExit -ne 0) {
-    Die '启动失败。可再执行: powershell -ExecutionPolicy Bypass -File scripts\start.ps1'
+    Die '启动失败。可再执行: scripts\start.bat'
 }
 
 Write-Host ''
