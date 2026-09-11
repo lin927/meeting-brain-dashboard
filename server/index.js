@@ -12,7 +12,7 @@ import path from 'node:path'
 
 import { ask, summarizeTranscript, testLlm } from '../lib/ask.js'
 import { loadGlossary, glossaryForSettings, saveUserNamedList } from '../lib/glossary.js'
-import { projectPatch } from '../lib/project.js'
+import { projectPatch, projectChoices } from '../lib/project.js'
 import { importProjectsFromCsv } from '../lib/project-csv.js'
 import { indexChunkIds } from '../lib/embed.js'
 import { overview, todosByRange, keywordSearch, meetingCount } from '../lib/overview.js'
@@ -120,6 +120,10 @@ app.get('/api/detail', async (req, res) => {
     if (!id) return fail(res, new Error('缺少 id'))
     ok(res, meetingDetail(id))
   } catch (e) { fail(res, e) }
+})
+
+app.get('/api/projects', async (_req, res) => {
+  try { ok(res, { items: projectChoices(loadGlossary()) }) } catch (e) { fail(res, e) }
 })
 
 app.get('/api/project', async (req, res) => {

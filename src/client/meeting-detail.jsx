@@ -14,6 +14,7 @@ function writebackToast(r) {
 
 export function MeetingDetail(props) {
   const uuid = props.uuid
+  const active = props.active !== false
   const meetTag = props.meetTag
   const onTag = props.onTag
   const onChanged = props.onChanged
@@ -82,6 +83,22 @@ export function MeetingDetail(props) {
     }).catch((e) => setErr(String(e && e.message || e)))
   }, [uuid])
   React.useEffect(() => { load() }, [load])
+  const refreshProjects = React.useCallback(() => {
+    api('/api/projects').then((r) => {
+      const items = (r && r.items) || []
+      setD((prev) => prev ? { ...prev, projects: items } : prev)
+    }).catch(() => {})
+  }, [])
+  const wasActive = React.useRef(!!active)
+  React.useEffect(() => {
+    const now = !!active
+    const became = now && !wasActive.current
+    wasActive.current = now
+    if (became) refreshProjects()
+  }, [active, refreshProjects])
+  React.useEffect(() => {
+    if (editing || confirmUploadGate) refreshProjects()
+  }, [editing, confirmUploadGate, refreshProjects])
   const doDeep = () => {
     if (deeping) return
     if (String(deep || '').trim()) { setConfirmDeep(true); return }
