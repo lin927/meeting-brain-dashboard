@@ -194,8 +194,18 @@
     .person .alias-cell { display: flex; align-items: center; gap: 6px; min-width: 0; }
     .person .alias-cell input { width: auto; flex: 1; min-width: 0; }
     .person .dup { font-size: 11px; color: var(--vermilion); flex-shrink: 0; }
-    .block { margin-bottom: 32px; }
+    .block { margin-bottom: 28px; }
     .block h3 { font-family: "Noto Serif SC", serif; font-size: 17px; margin: 0 0 8px; }
+    .block + .block {
+      padding-top: 26px;
+      border-top: 1px dashed var(--rule);
+    }
+    .block .lede { margin-bottom: 12px; }
+    .block .filters { margin-bottom: 0; }
+    .rule { padding: 16px 0 18px; border-bottom: 1px dashed var(--rule); }
+    .rule-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    .rule-head .n { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--ink-soft); }
+    .rule .field { margin-bottom: 8px; }
     .status { font-size: 14px; line-height: 1.7; margin: 0 0 16px; }
     .field { margin-bottom: 12px; }
     .field span { display: block; font-size: 12px; color: var(--ink-soft); margin-bottom: 4px; }

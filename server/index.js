@@ -25,15 +25,20 @@ import {
 } from '../lib/db.js'
 import { setMeetingVisibility, peekCompanyMeeting, testRagflow } from '../lib/publish.js'
 import { importMeeting } from '../lib/import-meeting.js'
-import { updateDingTalkTitle } from '../lib/minutes-write.js'
+import { refreshMeeting } from '../lib/pull.js'
+import { updateDingTalkTitle, updateDingTalkSummary } from '../lib/minutes-write.js'
 import { syncStatus } from '../lib/sync-status.js'
 import { persistSyncResult, isSyncing, syncProgress, enqueueSync } from '../lib/sync-run.js'
 import { listLogs, pushLog } from '../lib/runtime-log.js'
+import {
+  loadClassifyConfig, saveClassifyConfig, classifyPublicView, classifyExisting,
+} from '../lib/classify.js'
 import { getMcpState, setMcpEnabled, rotateMcpToken, mcpIsEnabled, bearerMatches } from '../lib/mcp-config.js'
 import { handleMcpHttp } from '../lib/mcp-server.js'
 import {
   resolveLlmConfig, saveLlmConfig, llmPublicView,
   resolveKbConfig, saveKbConfig, kbPublicView,
+  resolveWriteback, saveWriteback,
 } from '../lib/runtime-config.js'
 import { normalizeType, canPublishType } from '../lib/meeting-type.js'
 
@@ -219,7 +224,10 @@ app.patch('/api/meeting', async (req, res) => {
       if (req.body[k] !== undefined) fields[k] = req.body[k]
     }
     const typeRaw = req.body.type !== undefined ? req.body.type : req.body.scope
-    if (typeRaw !== undefined) fields.scope = normalizeType(typeRaw)
+    if (typeRaw !== undefined) {
+      fields.scope = normalizeType(typeRaw)
+      fields.scope_source = fields.scope ? 'user' : ''
+    }
     if (req.body.tags !== undefined) fields.tags_json = JSON.stringify(parseTags(req.body.tags))
     const deepIn = req.body.deepSummary !== undefined ? req.body.deepSummary
       : (req.body.deep_summary !== undefined ? req.body.deep_summary : undefined)
@@ -238,6 +246,9 @@ app.patch('/api/meeting', async (req, res) => {
       fields.visibility = 'private'
     }
     const prevTitle = m.title
+    const prevSummary = m.summary
+    const meetingSource = m.source
+    const writebackOn = resolveWriteback(db).enabled
     db.close()
     if (wasCompany && nextType === '个人') {
       const retracted = await setMeetingVisibility({ taskUuid: id, visibility: 'private' })
@@ -263,20 +274,41 @@ app.patch('/api/meeting', async (req, res) => {
       try { await indexChunkIds(indexIds) } catch (e) { console.error('index meeting:', e.message) }
     }
     let dingTalkTitle = null
-    const skipDingTalk = req.body.skipDingTalk === true
+    let dingTalkSummary = null
+    const skipDingTalk = req.body.skipDingTalk === true || !writebackOn
     if (fields.title !== undefined && String(fields.title) !== String(prevTitle || '')) {
       if (skipDingTalk) {
-        dingTalkTitle = { ok: true, status: 'skipped_local', message: '本机已保存，未改钉钉听记标题' }
+        dingTalkTitle = {
+          ok: true,
+          status: 'skipped_local',
+          message: writebackOn ? '本机已保存，未改钉钉听记标题' : '本机已保存，写回钉钉已关闭',
+        }
       } else {
-        dingTalkTitle = updateDingTalkTitle({
+        dingTalkTitle = await updateDingTalkTitle({
           taskUuid: id,
           title: fields.title,
-          source: m.source,
+          source: meetingSource,
+        })
+      }
+    }
+    if (hasSummary && String(req.body.summary) !== String(prevSummary || '')) {
+      if (skipDingTalk) {
+        dingTalkSummary = {
+          ok: true,
+          status: 'skipped_local',
+          message: writebackOn ? '本机已保存，未改钉钉纪要' : '本机已保存，写回钉钉已关闭',
+        }
+      } else {
+        dingTalkSummary = await updateDingTalkSummary({
+          taskUuid: id,
+          content: req.body.summary,
+          source: meetingSource,
         })
       }
     }
     const detail = meetingDetail(id)
     if (detail && dingTalkTitle) detail.dingTalkTitle = dingTalkTitle
+    if (detail && dingTalkSummary) detail.dingTalkSummary = dingTalkSummary
     ok(res, detail)
   } catch (e) { fail(res, e) }
 })
@@ -299,6 +331,26 @@ app.post('/api/meeting/delete', async (req, res) => {
     db2.close()
     if (!okDel) return fail(res, new Error('未找到会议'))
     ok(res, { ok: true, id })
+  } catch (e) { fail(res, e) }
+})
+
+app.post('/api/meeting/refresh', async (req, res) => {
+  try {
+    const id = String((req.body && req.body.id) || '')
+    if (!id) return fail(res, new Error('缺少 id'))
+    if (isSyncing()) return fail(res, new Error('正在同步中…请稍候'))
+    const r = await refreshMeeting({ taskUuid: id })
+    if (r.chunkIds && r.chunkIds.length) {
+      try { await indexChunkIds(r.chunkIds) } catch (e) { console.error('index refresh:', e.message) }
+    }
+    const bits = []
+    if (r.keptRecord) bits.push('本机改过的记录未覆盖')
+    if (r.keptTranscript) bits.push('本机改过的逐字稿未覆盖')
+    const message = bits.length ? ('已从钉钉重拉；' + bits.join('，')) : '已从钉钉重拉'
+    pushLog('更新', '重拉 ' + (r.title || id) + (bits.length ? '（' + bits.join('，') + '）' : ''))
+    const detail = meetingDetail(id)
+    if (detail) detail.refresh = { ok: true, keptRecord: r.keptRecord, keptTranscript: r.keptTranscript, message }
+    ok(res, detail)
   } catch (e) { fail(res, e) }
 })
 
@@ -409,6 +461,8 @@ function settingsPayload() {
   const llm = llmPublicView(resolveLlmConfig(db))
   const kb = kbPublicView(resolveKbConfig(db))
   const cats = getTodoCats(db)
+  const writeback = resolveWriteback(db)
+  const classify = classifyPublicView(loadClassifyConfig(db))
   db.close()
   return {
     people: g.people,
@@ -417,6 +471,8 @@ function settingsPayload() {
     llm,
     kb,
     cats,
+    writeback,
+    classify,
     mcp: getMcpState(PORT),
   }
 }
@@ -437,12 +493,34 @@ app.post('/api/settings', async (req, res) => {
     if (body.kbUrl !== undefined || body.kbKey !== undefined) {
       saveKbConfig(db, { url: body.kbUrl, apiKey: body.kbKey })
     }
+    if (body.writeback) saveWriteback(db, body.writeback)
+    if (body.classify) saveClassifyConfig(db, body.classify)
     db.close()
     if (body.mcp) {
       if (body.mcp.rotateToken) rotateMcpToken(PORT)
       else if (body.mcp.enabled !== undefined) setMcpEnabled(!!body.mcp.enabled, PORT)
     }
     ok(res, settingsPayload())
+  } catch (e) { fail(res, e) }
+})
+
+app.post('/api/classify', async (req, res) => {
+  try {
+    const id = String((req.body && req.body.id) || '')
+    const all = !!(req.body && req.body.all)
+    if (!id && !all) return fail(res, new Error('缺少 id'))
+    const db = open()
+    const r = classifyExisting(db, { id, all })
+    db.close()
+    if (id && r.updated === 0) {
+      const skip = r.skipped && r.skipped[0]
+      if (skip && skip.skipped === 'user') return fail(res, new Error('这场会的类型是手改的，规则不会覆盖'))
+      if (skip && skip.skipped === 'no-match') return fail(res, new Error('没有规则命中这场会'))
+    }
+    if (all) pushLog('更新', '按规则填写类型 ' + r.updated + ' 场')
+    else if (id && r.updated) pushLog('更新', '按规则填写 ' + ((r.items[0] && r.items[0].title) || id))
+    const detail = id ? meetingDetail(id) : null
+    ok(res, { ...r, meeting: detail })
   } catch (e) { fail(res, e) }
 })
 

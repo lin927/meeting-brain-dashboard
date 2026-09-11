@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { api, fallbackCopy } from './api.js'
-import { KB_DS, LLM_PRESETS, fmtDateTime, lastSyncLabel, syncProgressLabel } from './format.js'
+import { KB_DS, LLM_PRESETS, MEETING_TYPES, fmtDateTime, lastSyncLabel, syncProgressLabel } from './format.js'
 import { ConfirmSheet } from './ui.jsx'
 
 const GLOSSARY_TABS = [
@@ -11,6 +11,10 @@ const GLOSSARY_TABS = [
 
 function splitAliases(v) {
   return String(v || '').split(/[、，,;；/|]+/).map((s) => s.trim()).filter(Boolean)
+}
+
+function newClassifyRule() {
+  return { id: 'r-' + Date.now().toString(36), type: '项目', title: '', people: '', record: '', tags: '' }
 }
 
 function sharedAliasSet(rows) {
@@ -49,6 +53,10 @@ export function SettingsPage(props) {
   const [testMsg, setTestMsg] = useState('')
   const [logs, setLogs] = useState([])
   const [mcpBusy, setMcpBusy] = useState(false)
+  const [writebackBusy, setWritebackBusy] = useState(false)
+  const [classifyBusy, setClassifyBusy] = useState(false)
+  const [classify, setClassify] = useState({ projectFromGlossary: true, rules: [] })
+  const [confirmClassify, setConfirmClassify] = useState(false)
   const [confirmRotate, setConfirmRotate] = useState(false)
   const [confirmFull, setConfirmFull] = useState(false)
   const [syncBusy, setSyncBusy] = useState(false)
@@ -73,6 +81,11 @@ export function SettingsPage(props) {
       url: K.url || '',
       apiKey: '',
       datasets: Object.assign({ mgmt: '', ops: '', project: '', dept: '' }, K.datasets || {}),
+    })
+    const C = r.classify || {}
+    setClassify({
+      projectFromGlossary: C.projectFromGlossary !== false,
+      rules: Array.isArray(C.rules) ? C.rules : [],
     })
   }
   useEffect(() => {
@@ -137,6 +150,30 @@ export function SettingsPage(props) {
     const body = { url: kb.url, datasets: kb.datasets }
     if (kb.apiKey.trim()) body.apiKey = kb.apiKey.trim()
     api('/api/settings', { kb: body }).then((r) => { apply(r); toast('已保存') }).catch((er) => toast(String(er && er.message || er)))
+  }
+  const setRule = (i, patch) => {
+    const n = classify.rules.slice()
+    n[i] = { ...n[i], ...patch }
+    setClassify({ ...classify, rules: n })
+  }
+  const saveClassify = () => {
+    api('/api/settings', { classify }).then((r) => { apply(r); toast('已保存') }).catch((er) => toast(String(er && er.message || er)))
+  }
+  const runClassifyAll = () => {
+    if (classifyBusy) return
+    setClassifyBusy(true)
+    api('/api/classify', { all: true }).then((r) => {
+      setConfirmClassify(false)
+      toast(r.updated ? ('已填写 ' + r.updated + ' 场') : '没有场次被规则命中')
+    }).catch((er) => toast(String(er && er.message || er))).finally(() => setClassifyBusy(false))
+  }
+  const setWriteback = (enabled) => {
+    if (writebackBusy) return
+    setWritebackBusy(true)
+    api('/api/settings', { writeback: { enabled } }).then((r) => {
+      apply(r)
+      toast(enabled ? '写回钉钉已打开' : '写回钉钉已关闭')
+    }).catch((er) => toast(String(er && er.message || er))).finally(() => setWritebackBusy(false))
   }
   const setMcp = (body) => {
     if (mcpBusy) return
@@ -249,8 +286,8 @@ export function SettingsPage(props) {
   )
   const kbPane = (
     <div className="page-inner">
-      <h1>公司知识库</h1>
-      <p className="lede">一台 RAGFlow、四个库。项目会议、部门会议各进一个库，不同项目或部门用标签区分。</p>
+      <h1>上传</h1>
+      <p className="lede">详情里点上传时写入这里。一台 RAGFlow、四个库。项目会议、部门会议各进一个库，不同项目或部门用标签区分。</p>
       <div className="field"><span>地址</span><input type="text" placeholder="RAGFlow 地址" value={kb.url} onChange={(ev) => setKb({ ...kb, url: ev.target.value })} /></div>
       <div className="field">
         <span>密钥</span>
@@ -280,6 +317,61 @@ export function SettingsPage(props) {
         }).catch((er) => setTestMsg(String(er && er.message || er))).finally(() => setTesting(''))
       }}>{testing === 'kb' ? '在测…' : '测一下'}</button>
       {testMsg && tab === 'kb' ? <p className="status">{testMsg}</p> : null}
+    </div>
+  )
+  const classifyPane = (
+    <div className="page-inner">
+      <h1>类型规则</h1>
+      <p className="lede">新听记入库时，按从上到下第一条命中的规则填写类型和标签。手改过的类型不覆盖。库里已有的要点「套用到未定场次」。</p>
+      <div className="filters">
+        <button
+          className={classify.projectFromGlossary ? 'on' : ''}
+          onClick={() => setClassify({ ...classify, projectFromGlossary: !classify.projectFromGlossary })}
+        >词表项目</button>
+      </div>
+      <p className="hint">{classify.projectFromGlossary ? '标题或记录命中称呼表里的项目名/别名时，标为「项目」并打上该项目名。规则先于这一条。' : '不自动用词表项目名识别。'}</p>
+      {(classify.rules || []).map((rule, i) => (
+        <div className="rule" key={rule.id || i}>
+          <div className="rule-head">
+            <span className="n">{i + 1}</span>
+            <div className="cat-pills">
+              {MEETING_TYPES.map((s) => (
+                <button key={s} type="button" className={rule.type === s ? 'on' : ''} onClick={() => setRule(i, { type: s })}>{s}</button>
+              ))}
+            </div>
+            <button className="quiet" disabled={i === 0} onClick={() => {
+              const n = classify.rules.slice()
+              const t = n[i - 1]; n[i - 1] = n[i]; n[i] = t
+              setClassify({ ...classify, rules: n })
+            }}>上移</button>
+            <button className="quiet" disabled={i === classify.rules.length - 1} onClick={() => {
+              const n = classify.rules.slice()
+              const t = n[i + 1]; n[i + 1] = n[i]; n[i] = t
+              setClassify({ ...classify, rules: n })
+            }}>下移</button>
+            <button className="quiet" onClick={() => setClassify({ ...classify, rules: classify.rules.filter((_, j) => j !== i) })}>删除</button>
+          </div>
+          <div className="field"><span>标题含（任一）</span><input type="text" placeholder="周会、管理会" value={rule.title || ''} onChange={(ev) => setRule(i, { title: ev.target.value })} /></div>
+          <div className="field"><span>参会人都要有</span><input type="text" placeholder="郑勇、徐林；可用别名" value={rule.people || ''} onChange={(ev) => setRule(i, { people: ev.target.value })} /></div>
+          <div className="field"><span>记录含（任一）</span><input type="text" placeholder="纪要里的词" value={rule.record || ''} onChange={(ev) => setRule(i, { record: ev.target.value })} /></div>
+          <div className="field"><span>并打标签</span><input type="text" placeholder="项目名或部门，可空" value={rule.tags || ''} onChange={(ev) => setRule(i, { tags: ev.target.value })} /></div>
+        </div>
+      ))}
+      <button className="quiet" onClick={() => setClassify({ ...classify, rules: classify.rules.concat([newClassifyRule()]) })}>+ 规则</button>
+      <button className="primary" style={{ marginLeft: 8 }} onClick={saveClassify}>保存</button>
+      <button className="quiet" disabled={classifyBusy} onClick={() => setConfirmClassify(true)}>套用规则</button>
+      {confirmClassify
+        ? (
+          <ConfirmSheet
+            title="按规则填写类型"
+            lede="只改未定的，以及以前由规则填过的。你手选过类型的场次不动。"
+            confirmLabel="套用"
+            busy={classifyBusy}
+            onConfirm={runClassifyAll}
+            onClose={() => { if (!classifyBusy) setConfirmClassify(false) }}
+          />
+        )
+        : null}
     </div>
   )
   const mcp = st.mcp || {}
@@ -315,16 +407,28 @@ export function SettingsPage(props) {
     </div>
   )
   const pulling = syncBusy || !!(syncSt && syncSt.syncing)
+  const writeback = st.writeback || { enabled: true }
   const syncPane = (
     <div className="page-inner">
       <h1>听记</h1>
-      <p className="lede">列表上的「更新」只拉本机还没有的，最多 300 场。全量会把钉钉列表里尚未入库的都拉完，可能要较久，但在后台跑，网页可以继续用。</p>
-      <p className="status">{
-        pulling
-          ? (syncProgressLabel(syncSt) || '同步中…页面可继续用')
-          : (lastSyncLabel(syncSt) ? ('上次：' + lastSyncLabel(syncSt)) : '还没同步过')
-      }</p>
-      <button className="primary" disabled={pulling} onClick={() => setConfirmFull(true)}>{pulling ? '同步中…' : '全量同步'}</button>
+      <p className="lede">从钉钉拉到本机，和把本机改动写回钉钉，是两件事。</p>
+      <div className="block">
+        <h3>写回钉钉</h3>
+        <p className="lede">保存标题和「记录」（钉钉纪要）时，是否改对应听记。关闭后只改本机。待办、逐字稿、本机总结不会写回。</p>
+        <div className="filters">
+          <button className={writeback.enabled ? 'on' : ''} disabled={writebackBusy} onClick={() => setWriteback(true)}>打开</button>
+          <button className={!writeback.enabled ? 'on' : ''} disabled={writebackBusy} onClick={() => setWriteback(false)}>关闭</button>
+        </div>
+      </div>
+      <div className="block">
+        <h3>从钉钉同步</h3>
+        <p className="lede">列表上的「更新」只拉本机还没有的，最多 300 场。全量会把尚未入库的都拉完，可能要较久，但在后台跑，网页可以继续用。</p>
+        <p className="status">{
+          pulling
+            ? (syncProgressLabel(syncSt) || '同步中…页面可继续用')
+            : (lastSyncLabel(syncSt) ? ('上次：' + lastSyncLabel(syncSt)) : '还没同步过')
+        }</p>
+        <button className="primary" disabled={pulling} onClick={() => setConfirmFull(true)}>{pulling ? '同步中…' : '全量同步'}</button>
       {confirmFull
         ? (
           <ConfirmSheet
@@ -337,6 +441,7 @@ export function SettingsPage(props) {
           />
         )
         : null}
+      </div>
     </div>
   )
   const logsPane = (
@@ -358,17 +463,18 @@ export function SettingsPage(props) {
         : <p className="empty">还没有日志。</p>}
     </div>
   )
-  const panes = { people: peoplePane, llm: llmPane, kb: kbPane, mcp: mcpPane, sync: syncPane, logs: logsPane }
+  const panes = { people: peoplePane, classify: classifyPane, llm: llmPane, kb: kbPane, mcp: mcpPane, sync: syncPane, logs: logsPane }
   const glossaryCount = people.length + projects.length + terms.length
   const llmStatus = (st.llm && st.llm.model) || (st.llm && st.llm.keySet ? '已配' : '未配置')
   const kbStatus = (st.kb && st.kb.filled) ? (st.kb.filled + '/4') : '未填'
   const mcpStatus = mcp.enabled ? '开' : '关'
+  const classifyStatus = String((classify.rules || []).length || (classify.projectFromGlossary ? '词表' : '未配'))
   const syncStatusLabel = pulling ? '同步中' : (lastSyncLabel(syncSt) ? '已同步' : '未同步')
   return (
     <div className="settings">
       <aside className="cats">
         <h2>设置</h2>
-        {[['people', '称呼', String(glossaryCount)], ['llm', '模型', llmStatus], ['kb', '公司', kbStatus], ['mcp', 'MCP', mcpStatus], ['sync', '听记', syncStatusLabel], ['logs', '日志', String(logs.length || '')]].map(([id, label, n]) => (
+        {[['people', '称呼', String(glossaryCount)], ['classify', '类型', classifyStatus], ['llm', '模型', llmStatus], ['kb', '上传', kbStatus], ['mcp', 'MCP', mcpStatus], ['sync', '听记', syncStatusLabel], ['logs', '日志', String(logs.length || '')]].map(([id, label, n]) => (
           <div className={'cat' + (tab === id ? ' on' : '')} key={id} onClick={() => { setTab(id); setTestMsg('') }}>
             {label + ' '}<span className="n">{n}</span>
           </div>

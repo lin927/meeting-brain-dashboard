@@ -5,6 +5,13 @@ import { ConfirmSheet, InlineComposer, Md, SheetFrame, CheckMark, TitleInput, To
 
 const e = React.createElement
 
+function writebackToast(r) {
+  const msgs = []
+  if (r && r.dingTalkTitle && r.dingTalkTitle.message) msgs.push(r.dingTalkTitle.message)
+  if (r && r.dingTalkSummary && r.dingTalkSummary.message) msgs.push(r.dingTalkSummary.message)
+  return msgs.join('；')
+}
+
 export function MeetingDetail(props) {
   const uuid = props.uuid
   const meetTag = props.meetTag
@@ -36,6 +43,9 @@ export function MeetingDetail(props) {
   const [todoBusy, setTodoBusy] = React.useState(false)
   const [confirmDel, setConfirmDel] = React.useState(false)
   const [delBusy, setDelBusy] = React.useState(false)
+  const [confirmRefresh, setConfirmRefresh] = React.useState(false)
+  const [refreshBusy, setRefreshBusy] = React.useState(false)
+  const [classifyBusy, setClassifyBusy] = React.useState(false)
   const [confirmDeep, setConfirmDeep] = React.useState(false)
   const [confirmSharedTitle, setConfirmSharedTitle] = React.useState(false)
   const [confirmRetract, setConfirmRetract] = React.useState(false)
@@ -46,7 +56,7 @@ export function MeetingDetail(props) {
   const titleOnlyRef = React.useRef(false)
   const load = React.useCallback(() => {
     setD(null); setErr(null); setSub('record'); setDeep(''); setEditing(false); setEditingBody(null)
-    setAddingTag(false); setAddingTodo(false); setConfirmDel(false); setConfirmDeep(false); setConfirmSharedTitle(false); setConfirmRetract(false); setConfirmOverwrite(false); setPubRemote(null)
+    setAddingTag(false); setAddingTodo(false); setConfirmDel(false); setConfirmDeep(false); setConfirmSharedTitle(false); setConfirmRetract(false); setConfirmOverwrite(false); setConfirmRefresh(false); setPubRemote(null)
     api('/api/detail?id=' + encodeURIComponent(uuid)).then((r) => {
       if (r && r.error) setErr(r.error)
       else {
@@ -130,7 +140,8 @@ export function MeetingDetail(props) {
       setSummary((r && r.summary) || '')
       setTxDraft(((r && r.transcript) || []).join('\n'))
       setEditingBody(null)
-      toast('已保存到本机')
+      const msg = writebackToast(r)
+      toast((editingBody === 'record' && msg) ? msg : '已保存到本机')
       if (onChanged) onChanged()
     }).catch((err) => toast(String(err && err.message || err))).finally(() => setSavingBody(false))
   }
@@ -145,7 +156,8 @@ export function MeetingDetail(props) {
     if (!next) { setTitle(prev); toast('先写标题'); return }
     if (next === prev) return
     const shared = d && d.source === 'shared'
-    if (shared && !(opts && opts.sharedTitleDecided)) {
+    const writebackOn = d && d.writebackEnabled !== false
+    if (shared && writebackOn && !(opts && opts.sharedTitleDecided)) {
       titleOnlyRef.current = true
       setConfirmSharedTitle(true)
       return
@@ -165,7 +177,8 @@ export function MeetingDetail(props) {
     if (saving) return
     const titleChanged = String(title).trim() !== String((d && d.title) || '')
     const shared = d && d.source === 'shared'
-    if (titleChanged && shared && !(opts && opts.sharedTitleDecided)) {
+    const writebackOn = d && d.writebackEnabled !== false
+    if (titleChanged && shared && writebackOn && !(opts && opts.sharedTitleDecided)) {
       titleOnlyRef.current = false
       setConfirmSharedTitle(true)
       return
@@ -224,6 +237,41 @@ export function MeetingDetail(props) {
     setAddingTag(false)
   }
   const removeLocal = () => setConfirmDel(true)
+  const canRefresh = d && d.source !== 'import' && !String(uuid || '').startsWith('import-')
+  const doRefresh = () => {
+    if (refreshBusy) return
+    setRefreshBusy(true)
+    cancelBody()
+    setEditing(false)
+    api('/api/meeting/refresh', { id: uuid }).then((r) => {
+      setConfirmRefresh(false)
+      setD(r)
+      setTitle((r && r.title) || '')
+      setAttendees((r && r.attendees) || '')
+      setSummary((r && r.summary) || '')
+      setTxDraft(((r && r.transcript) || []).join('\n'))
+      setDeep((r && r.deepSummary) || '')
+      setScope((r && (r.type || r.scope)) || '')
+      setTags((r && r.tags) || [])
+      toast((r && r.refresh && r.refresh.message) || '已从钉钉重拉')
+      if (onChanged) onChanged()
+    }).catch((err) => toast(String(err && err.message || err))).finally(() => setRefreshBusy(false))
+  }
+  const doClassify = () => {
+    if (classifyBusy) return
+    setClassifyBusy(true)
+    api('/api/classify', { id: uuid }).then((r) => {
+      const m = r && r.meeting
+      if (m) {
+        setD(m)
+        setScope((m.type || m.scope) || '')
+        setTags(m.tags || [])
+      }
+      const hit = r && r.items && r.items[0]
+      toast(hit ? ('已标为' + hit.type + (hit.tags && hit.tags.length ? ' · ' + hit.tags.join('、') : '')) : '没有规则命中')
+      if (onChanged) onChanged()
+    }).catch((err) => toast(String(err && err.message || err))).finally(() => setClassifyBusy(false))
+  }
   const doRemove = () => {
     if (delBusy) return
     setDelBusy(true)
@@ -294,6 +342,9 @@ export function MeetingDetail(props) {
       ]
     : [
         e('button', { className: 'quiet', key: 'e', onClick: () => { cancelBody(); setEditing(true) } }, '编辑'),
+        canRefresh
+          ? e('button', { className: 'quiet', key: 'rf', disabled: refreshBusy, onClick: () => setConfirmRefresh(true) }, refreshBusy ? '重拉中' : '重拉')
+          : null,
         e('button', { className: 'quiet danger', key: 'del', onClick: removeLocal }, '删除'),
         personal
           ? e('span', { className: 'meta', key: 'p', style: { margin: '0 0 0 8px' } }, '个人不上传')
@@ -333,6 +384,12 @@ export function MeetingDetail(props) {
             }, s)))))
     : e('div', { className: 'tags' },
         e('span', { className: 'tag', style: { cursor: 'default' } }, typeLabel(meetType)),
+        (d.scopeSource !== 'user')
+          ? e('button', {
+              type: 'button', className: 'quiet', key: 'cls', disabled: classifyBusy,
+              onClick: doClassify,
+            }, classifyBusy ? '填写中' : (meetType ? '按规则重算' : '按规则填写'))
+          : null,
         (d.tags || []).map((t) => e('button', {
           type: 'button', className: 'tag' + (meetTag === t ? ' active' : ''), key: t,
           onClick: () => onTag && onTag(t),
@@ -355,13 +412,17 @@ export function MeetingDetail(props) {
   })()
   const bodyHint = editingBody === 'transcript'
     ? '行首【姓名】尽量保留，生成总结还靠它。'
-    : (editingBody
-      ? '只保存在本机，不写回钉钉。'
-      : (sub === 'record' && d.summaryEdited
-        ? '本机改过，听记再拉也不会盖掉。'
-        : (sub === 'transcript' && d.transcriptEdited
+    : (editingBody === 'record'
+      ? (d.writebackEnabled === false
+        ? '只保存在本机，写回钉钉已关闭。'
+        : '保存后会写回钉钉听记纪要。没有编辑权或导入场次只改本机。')
+      : (editingBody === 'deep'
+        ? '只保存在本机，不写回钉钉。'
+        : (sub === 'record' && d.summaryEdited
           ? '本机改过，听记再拉也不会盖掉。'
-          : '')))
+          : (sub === 'transcript' && d.transcriptEdited
+            ? '本机改过，听记再拉也不会盖掉。'
+            : ''))))
   return e('div', null,
     e('div', { className: 'doc-head' },
       e('div', { style: { minWidth: 0, flex: 1 } },
@@ -458,6 +519,14 @@ export function MeetingDetail(props) {
       busy: delBusy,
       onConfirm: doRemove,
       onClose: () => { if (!delBusy) setConfirmDel(false) },
+    }) : null,
+    confirmRefresh ? e(ConfirmSheet, {
+      title: '从钉钉重拉',
+      lede: '用钉钉最新的标题、记录、逐字稿和待办覆盖本机。本机手改过的记录、逐字稿不覆盖。本机总结、类型、标签和是否上传都不变。',
+      confirmLabel: '重拉',
+      busy: refreshBusy,
+      onConfirm: doRefresh,
+      onClose: () => { if (!refreshBusy) setConfirmRefresh(false) },
     }) : null,
     confirmDeep ? e(ConfirmSheet, {
       title: '重新生成总结',
