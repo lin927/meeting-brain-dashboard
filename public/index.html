@@ -81,6 +81,7 @@
     .primary { background: var(--ink); color: var(--paper-2); border: 1px solid var(--ink); padding: 7px 14px; font: inherit; cursor: pointer; }
     .primary:disabled, .quiet:disabled { opacity: 0.55; cursor: default; }
     .quiet { border: 0; background: transparent; color: var(--ink-soft); padding: 6px 8px; cursor: pointer; font: inherit; font-size: 13px; }
+    a.quiet { text-decoration: none; display: inline-block; }
     .quiet:hover { color: var(--ink); }
     .quiet.danger:hover { color: var(--vermilion); }
     .sync-pill {
@@ -190,6 +191,7 @@
     .empty { padding: 20px 8px; }
     .more-row { padding: 10px 8px 18px; }
     .person { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px dashed var(--rule); }
+    .person.has-code { grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.7fr) minmax(0, 1.2fr) auto; }
     .person input { min-width: 0; }
     .person .alias-cell { display: flex; align-items: center; gap: 6px; min-width: 0; }
     .person .alias-cell input { width: auto; flex: 1; min-width: 0; }
@@ -228,6 +230,7 @@
     .sheet.narrow { width: min(420px, calc(100% - 32px)); }
     .sheet h2 { font-family: "Noto Serif SC", serif; font-size: 20px; margin: 0 0 6px; }
     .sheet-actions { display: flex; gap: 8px; align-items: center; margin-top: 16px; }
+    .sheet .cat-pills { max-height: 240px; overflow: auto; margin-top: 10px; }
     .primary.danger { background: var(--vermilion); border-color: var(--vermilion); color: #faf6ee; }
     .inline-add {
       display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px;

@@ -1,5 +1,6 @@
 export const NAV = [['meet', '会议'], ['ledger', '待办'], ['settings', '设置']]
 export const MEETING_TYPES = ['个人', '公司管理', '公司运营', '项目', '部门']
+export const PUBLISH_TYPES = MEETING_TYPES.filter((t) => t !== '个人')
 export const KB_DS = [
   { key: 'mgmt', label: '公司管理会议' },
   { key: 'ops', label: '公司运营会议' },

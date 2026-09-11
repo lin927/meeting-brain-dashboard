@@ -1,6 +1,6 @@
 import React from 'react'
 import { api, fallbackCopy } from './api.js'
-import { MEETING_TYPES, companyMark, fmtDateTime, srcLabel, typeLabel, uploadBtnLabel, ymd } from './format.js'
+import { MEETING_TYPES, PUBLISH_TYPES, companyMark, fmtDateTime, srcLabel, typeLabel, uploadBtnLabel, ymd } from './format.js'
 import { ConfirmSheet, InlineComposer, Md, SheetFrame, CheckMark, TitleInput, TodoRowTitle } from './ui.jsx'
 
 const e = React.createElement
@@ -33,6 +33,9 @@ export function MeetingDetail(props) {
   const [summary, setSummary] = React.useState('')
   const [txDraft, setTxDraft] = React.useState('')
   const [scope, setScope] = React.useState('')
+  const [projectName, setProjectName] = React.useState('')
+  const [addingProject, setAddingProject] = React.useState(false)
+  const [editProjectQuery, setEditProjectQuery] = React.useState('')
   const [tags, setTags] = React.useState([])
   const [saving, setSaving] = React.useState(false)
   const [savingBody, setSavingBody] = React.useState(false)
@@ -50,13 +53,19 @@ export function MeetingDetail(props) {
   const [confirmSharedTitle, setConfirmSharedTitle] = React.useState(false)
   const [confirmRetract, setConfirmRetract] = React.useState(false)
   const [confirmOverwrite, setConfirmOverwrite] = React.useState(false)
+  const [confirmUploadGate, setConfirmUploadGate] = React.useState(false)
+  const [pickType, setPickType] = React.useState('')
+  const [pickName, setPickName] = React.useState('')
+  const [pickQuery, setPickQuery] = React.useState('')
+  const [addingPick, setAddingPick] = React.useState(false)
+  const [pickBusy, setPickBusy] = React.useState(false)
   const [pubRemote, setPubRemote] = React.useState(null)
   const [pubOperator, setPubOperator] = React.useState('')
   const [pubBusy, setPubBusy] = React.useState(false)
   const titleOnlyRef = React.useRef(false)
   const load = React.useCallback(() => {
     setD(null); setErr(null); setSub('record'); setDeep(''); setEditing(false); setEditingBody(null)
-    setAddingTag(false); setAddingTodo(false); setConfirmDel(false); setConfirmDeep(false); setConfirmSharedTitle(false); setConfirmRetract(false); setConfirmOverwrite(false); setConfirmRefresh(false); setPubRemote(null)
+    setAddingTag(false); setAddingTodo(false); setAddingProject(false); setEditProjectQuery(''); setConfirmDel(false); setConfirmDeep(false); setConfirmSharedTitle(false); setConfirmRetract(false); setConfirmOverwrite(false); setConfirmUploadGate(false); setConfirmRefresh(false); setPubRemote(null)
     api('/api/detail?id=' + encodeURIComponent(uuid)).then((r) => {
       if (r && r.error) setErr(r.error)
       else {
@@ -67,6 +76,7 @@ export function MeetingDetail(props) {
         setTxDraft((r.transcript || []).join('\n'))
         setDeep(r.deepSummary || '')
         setScope(r.type || r.scope || '')
+        setProjectName(r.projectName || '')
         setTags(r.tags || [])
       }
     }).catch((e) => setErr(String(e && e.message || e)))
@@ -185,7 +195,7 @@ export function MeetingDetail(props) {
     }
     setConfirmSharedTitle(false)
     setSaving(true)
-    const body = { id: uuid, title: String(title || '').trim() || d.title, attendees, type: scope, tags }
+    const body = { id: uuid, title: String(title || '').trim() || d.title, attendees, type: scope, tags, projectName }
     if (opts && opts.skipDingTalk) body.skipDingTalk = true
     api('/api/meeting', body, 'PATCH').then((r) => {
       setD(r); setEditing(false)
@@ -218,7 +228,6 @@ export function MeetingDetail(props) {
     if (!d || pubBusy) return
     const t = d.type || d.scope
     if (t === '个人') { toast('个人会议不上传'); return }
-    if (!t) { toast('先选类型再上传'); return }
     if (d.visibility === 'company') {
       setPubBusy(true)
       api('/api/publish/status?id=' + encodeURIComponent(uuid)).then((st) => {
@@ -228,7 +237,44 @@ export function MeetingDetail(props) {
       }).catch((err) => toast(String(err && err.message || err))).finally(() => setPubBusy(false))
       return
     }
+    if (!t || (t === '项目' && !String(d.projectName || '').trim())) {
+      setPickType(t === '项目' ? '项目' : '')
+      setPickName('')
+      setPickQuery('')
+      setAddingPick(false)
+      setConfirmUploadGate(true)
+      return
+    }
     doPublish('company')
+  }
+  const closeUploadGate = () => {
+    if (pickBusy) return
+    setConfirmUploadGate(false)
+    setPickType('')
+    setPickName('')
+    setPickQuery('')
+    setAddingPick(false)
+  }
+  const submitUploadGate = () => {
+    const type = String(pickType || '').trim()
+    const name = String(pickName || '').trim()
+    if (!type || pickBusy || pubBusy) return
+    if (type === '项目' && !name) return
+    setPickBusy(true)
+    const body = { id: uuid, type }
+    if (type === '项目') body.projectName = name
+    api('/api/meeting', body, 'PATCH').then((r) => {
+      setD(r)
+      setScope((r && (r.type || r.scope)) || type)
+      setProjectName((r && r.projectName) || name)
+      setConfirmUploadGate(false)
+      setPickType('')
+      setPickName('')
+      setPickQuery('')
+      setAddingPick(false)
+      if (onChanged) onChanged()
+      doPublish('company')
+    }).catch((err) => toast(String(err && err.message || err))).finally(() => setPickBusy(false))
   }
   const addTag = (name) => {
     const t = String(name || '').trim()
@@ -252,6 +298,7 @@ export function MeetingDetail(props) {
       setTxDraft(((r && r.transcript) || []).join('\n'))
       setDeep((r && r.deepSummary) || '')
       setScope((r && (r.type || r.scope)) || '')
+      setProjectName((r && r.projectName) || '')
       setTags((r && r.tags) || [])
       toast((r && r.refresh && r.refresh.message) || '已从钉钉重拉')
       if (onChanged) onChanged()
@@ -265,10 +312,11 @@ export function MeetingDetail(props) {
       if (m) {
         setD(m)
         setScope((m.type || m.scope) || '')
+        setProjectName((m.projectName) || '')
         setTags(m.tags || [])
       }
       const hit = r && r.items && r.items[0]
-      toast(hit ? ('已标为' + hit.type + (hit.tags && hit.tags.length ? ' · ' + hit.tags.join('、') : '')) : '没有规则命中')
+      toast(hit ? ('已标为' + hit.type + (hit.project ? ' · ' + hit.project : '') + (hit.tags && hit.tags.length ? ' · ' + hit.tags.join('、') : '')) : '没有规则命中')
       if (onChanged) onChanged()
     }).catch((err) => toast(String(err && err.message || err))).finally(() => setClassifyBusy(false))
   }
@@ -328,7 +376,6 @@ export function MeetingDetail(props) {
   const synced = d.visibility === 'company'
   const meetType = d.type || d.scope || ''
   const personal = meetType === '个人'
-  const canPub = meetType && !personal
   const tools = editing
     ? [
         e('button', { className: 'primary', key: 's', onClick: saveEdit, disabled: saving }, saving ? '保存中' : '保存'),
@@ -336,31 +383,54 @@ export function MeetingDetail(props) {
           setTitle((d && d.title) || '')
           setAttendees((d && d.attendees) || '')
           setScope((d && (d.type || d.scope)) || '')
+          setProjectName((d && d.projectName) || '')
+          setEditProjectQuery('')
           setTags((d && d.tags) || [])
           setEditing(false)
         } }, '取消'),
       ]
     : [
-        e('button', { className: 'quiet', key: 'e', onClick: () => { cancelBody(); setEditing(true) } }, '编辑'),
+        e('button', { className: 'quiet', key: 'e', onClick: () => { cancelBody(); setEditProjectQuery(''); setEditing(true) } }, '编辑'),
         canRefresh
           ? e('button', { className: 'quiet', key: 'rf', disabled: refreshBusy, onClick: () => setConfirmRefresh(true) }, refreshBusy ? '重拉中' : '重拉')
           : null,
         e('button', { className: 'quiet danger', key: 'del', onClick: removeLocal }, '删除'),
         personal
           ? e('span', { className: 'meta', key: 'p', style: { margin: '0 0 0 8px' } }, '个人不上传')
-          : (!canPub
-              ? e('span', { className: 'meta', key: 'need', style: { margin: '0 0 0 8px' } }, '先选类型')
-              : e('button', {
-                  className: 'sync-pill' + (synced ? ' on' : ''),
-                  key: 'pub',
-                  disabled: pubBusy,
-                  onClick: togglePublish,
-                }, pubBusy
-                  ? ((confirmRetract || confirmOverwrite)
-                    ? (synced ? '撤回中…' : '上传中…')
-                    : (synced ? '查询中…' : '上传中…'))
-                  : (synced ? companyMark(d) || '已上传' : (uploadBtnLabel(meetType) || '上传')))),
+          : e('button', {
+              className: 'sync-pill' + (synced ? ' on' : ''),
+              key: 'pub',
+              disabled: pubBusy || pickBusy,
+              onClick: togglePublish,
+            }, pubBusy
+              ? ((confirmRetract || confirmOverwrite)
+                ? (synced ? '撤回中…' : '上传中…')
+                : (synced ? '查询中…' : '上传中…'))
+              : (synced ? companyMark(d) || '已上传' : (uploadBtnLabel(meetType) || '上传'))),
       ]
+  const pickScope = (s) => {
+    setScope(s)
+    if (s !== '项目') {
+      setProjectName('')
+      setAddingProject(false)
+      setEditProjectQuery('')
+    }
+  }
+  const projectHits = (() => {
+    const q = String(editProjectQuery || '').trim().toLowerCase()
+    const rows = (d.projects || []).slice()
+    if (projectName && !rows.some((p) => p.name === projectName)) {
+      rows.unshift({ name: projectName, code: '' })
+    }
+    if (!q) {
+      return { q, list: rows.filter((p) => p.name === projectName), more: 0 }
+    }
+    const matched = rows.filter((p) => (
+      String(p.name || '').toLowerCase().includes(q) || String(p.code || '').toLowerCase().includes(q)
+    ))
+    const cap = 12
+    return { q, list: matched.slice(0, cap), more: Math.max(0, matched.length - cap) }
+  })()
   const tagRow = editing
     ? e('div', null,
         e('div', { className: 'tags', style: { marginTop: 10 } },
@@ -376,21 +446,67 @@ export function MeetingDetail(props) {
           e('div', { className: 'cat-pills' },
             e('button', {
               type: 'button', key: 'none', className: !scope ? 'on' : '',
-              onClick: () => setScope(''),
+              onClick: () => pickScope(''),
             }, '未定'),
             MEETING_TYPES.map((s) => e('button', {
               type: 'button', key: s, className: scope === s ? 'on' : '',
-              onClick: () => setScope(s),
-            }, s)))))
+              onClick: () => pickScope(s),
+            }, s)))),
+        scope === '项目'
+          ? e('div', { className: 'field', style: { marginTop: 10 }, key: 'proj' },
+              e('span', null, '项目'),
+              e('input', {
+                type: 'text',
+                placeholder: '输入名称或编号筛选',
+                value: editProjectQuery,
+                onChange: (ev) => setEditProjectQuery(ev.target.value),
+              }),
+              e('div', { className: 'cat-pills' },
+                e('button', {
+                  type: 'button', key: 'proj-none', className: !projectName ? 'on' : '',
+                  onClick: () => { setProjectName(''); setAddingProject(false) },
+                }, '未标'),
+                projectHits.list.map((p) => e('button', {
+                  type: 'button', key: 'proj-' + p.name, className: projectName === p.name ? 'on' : '',
+                  onClick: () => { setProjectName(p.name); setAddingProject(false); setEditProjectQuery('') },
+                }, p.name + (p.code ? ' · ' + p.code : ''))),
+                addingProject
+                  ? e(InlineComposer, {
+                      key: 'proj-in', compact: true, placeholder: '项目名', submitLabel: '确定',
+                      onSubmit: (name) => {
+                        const n = String(name || '').trim()
+                        if (n) setProjectName(n)
+                        setAddingProject(false)
+                        setEditProjectQuery('')
+                      },
+                      onCancel: () => setAddingProject(false),
+                    })
+                  : e('button', { type: 'button', className: 'quiet', key: 'proj-add', onClick: () => setAddingProject(true) }, '+ 其他')),
+              !projectHits.q && !projectName
+                ? e('p', { className: 'hint', style: { marginTop: 6 } }, '项目很多，先搜名称或编号。')
+                : (projectHits.q && !projectHits.list.length
+                  ? e('p', { className: 'hint', style: { marginTop: 6 } }, '没有匹配的项目。')
+                  : (projectHits.more
+                    ? e('p', { className: 'hint', style: { marginTop: 6 } }, '还有 ' + projectHits.more + ' 个，再写细一点。')
+                    : null)))
+          : null)
     : e('div', { className: 'tags' },
         e('span', { className: 'tag', style: { cursor: 'default' } }, typeLabel(meetType)),
+        (meetType === '项目' && d.projectName)
+          ? e('button', {
+              type: 'button', className: 'tag' + (meetTag === d.projectName ? ' active' : ''), key: 'proj',
+              onClick: () => onTag && onTag(d.projectName),
+            }, d.projectName + (d.projectCode ? ' · ' + d.projectCode : ''))
+          : (meetType === '项目'
+            ? e('span', { className: 'tag', key: 'proj-miss', style: { cursor: 'default' } }, '未标明项目')
+            : null),
         (d.scopeSource !== 'user')
           ? e('button', {
               type: 'button', className: 'quiet', key: 'cls', disabled: classifyBusy,
               onClick: doClassify,
             }, classifyBusy ? '填写中' : (meetType ? '按规则重算' : '按规则填写'))
           : null,
-        (d.tags || []).map((t) => e('button', {
+        (d.tags || []).filter((t) => t !== d.projectName).map((t) => e('button', {
           type: 'button', className: 'tag' + (meetTag === t ? ' active' : ''), key: t,
           onClick: () => onTag && onTag(t),
         }, t)))
@@ -522,7 +638,7 @@ export function MeetingDetail(props) {
     }) : null,
     confirmRefresh ? e(ConfirmSheet, {
       title: '从钉钉重拉',
-      lede: '用钉钉最新的标题、记录、逐字稿和待办覆盖本机。本机手改过的记录、逐字稿不覆盖。本机总结、类型、标签和是否上传都不变。',
+      lede: '用钉钉最新的标题、记录、逐字稿和待办覆盖本机。本机手改过的记录、逐字稿不覆盖。本机总结、类型、项目、标签和是否上传都不变。',
       confirmLabel: '重拉',
       busy: refreshBusy,
       onConfirm: doRefresh,
@@ -549,6 +665,79 @@ export function MeetingDetail(props) {
       onConfirm: () => doPublish('private'),
       onClose: () => { if (!pubBusy) setConfirmRetract(false) },
     }) : null,
+    confirmUploadGate ? e(SheetFrame, {
+      title: pickType === '项目' && (d.type || d.scope) === '项目' ? '标明项目后上传' : '选类型后上传',
+      lede: (d.type || d.scope)
+        ? '项目会议进同一个知识库。先选这场会是哪个项目，再上传。'
+        : '先选这场会的类型，再上传到对应知识库。个人会议不能上传。',
+      onClose: closeUploadGate,
+    },
+      (d.type || d.scope)
+        ? null
+        : e('div', { className: 'field' },
+            e('span', null, '类型'),
+            e('div', { className: 'cat-pills' },
+              PUBLISH_TYPES.map((s) => e('button', {
+                type: 'button', key: 'ut-' + s, className: pickType === s ? 'on' : '', disabled: pickBusy,
+                onClick: () => {
+                  setPickType(s)
+                  if (s !== '项目') {
+                    setPickName('')
+                    setAddingPick(false)
+                  }
+                },
+              }, s)))),
+      pickType === '项目'
+        ? e('div', { className: 'field', key: 'up' },
+            e('span', null, '项目'),
+            e('input', {
+              type: 'text',
+              placeholder: '过滤名称或编号',
+              value: pickQuery,
+              onChange: (ev) => setPickQuery(ev.target.value),
+            }),
+            e('div', { className: 'cat-pills' },
+              (() => {
+                const q = String(pickQuery || '').trim().toLowerCase()
+                const rows = (d.projects || []).filter((p) => {
+                  if (!q) return true
+                  return String(p.name || '').toLowerCase().includes(q) || String(p.code || '').toLowerCase().includes(q)
+                })
+                if (pickName && !rows.some((p) => p.name === pickName) && !q) {
+                  rows.unshift({ name: pickName, code: '' })
+                }
+                const pills = rows.map((p) => e('button', {
+                  type: 'button',
+                  key: 'pick-' + p.name,
+                  className: pickName === p.name ? 'on' : '',
+                  disabled: pickBusy,
+                  onClick: () => { setPickName(p.name); setAddingPick(false) },
+                }, p.name + (p.code ? ' · ' + p.code : '')))
+                pills.push(addingPick
+                  ? e(InlineComposer, {
+                      key: 'pick-in', compact: true, placeholder: '项目名', submitLabel: '确定',
+                      onSubmit: (name) => {
+                        const n = String(name || '').trim()
+                        if (n) setPickName(n)
+                        setAddingPick(false)
+                      },
+                      onCancel: () => setAddingPick(false),
+                    })
+                  : e('button', {
+                      type: 'button', className: 'quiet', key: 'pick-add', disabled: pickBusy,
+                      onClick: () => setAddingPick(true),
+                    }, '+ 其他'))
+                return pills
+              })()))
+        : null,
+      e('div', { className: 'sheet-actions' },
+        e('button', {
+          className: 'primary',
+          disabled: pickBusy || !pickType || (pickType === '项目' && !String(pickName || '').trim()),
+          onClick: submitUploadGate,
+        }, pickBusy ? '上传中…' : (uploadBtnLabel(pickType) || '上传')),
+        e('button', { className: 'quiet', disabled: pickBusy, onClick: closeUploadGate }, '取消')))
+      : null,
     confirmOverwrite ? e(ConfirmSheet, {
       title: '覆盖已有文档',
       lede: (() => {

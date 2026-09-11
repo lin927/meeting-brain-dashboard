@@ -239,7 +239,7 @@ export function MeetPage(props) {
                 >
                   <div className="t">{x.title}</div>
                   <div className="meta">
-                    {[fmtShort(x.time), srcLabel(x.source), (x.tags || [])[0], companyMark(x)].filter(Boolean).join(' · ')}
+                    {[fmtShort(x.time), srcLabel(x.source), x.projectName || (x.tags || [])[0], companyMark(x)].filter(Boolean).join(' · ')}
                   </div>
                 </div>
               ))}

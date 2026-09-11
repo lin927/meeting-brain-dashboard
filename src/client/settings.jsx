@@ -5,7 +5,7 @@ import { ConfirmSheet } from './ui.jsx'
 
 const GLOSSARY_TABS = [
   { id: 'people', label: '人', add: '+ 人', namePh: '正式姓名', aliasPh: '勇哥、林哥' },
-  { id: 'projects', label: '项目', add: '+ 项目', namePh: '正式项目名', aliasPh: '简称、口述' },
+  { id: 'projects', label: '项目', add: '+ 项目', namePh: '正式项目名', aliasPh: '简称、口述', codePh: '编号，可空' },
   { id: 'terms', label: '用语', add: '+ 用语', namePh: '标准写法', aliasPh: '听错、近音' },
 ]
 
@@ -63,6 +63,8 @@ export function SettingsPage(props) {
   const [syncSt, setSyncSt] = useState(null)
   const waitSync = useRef(false)
   const syncStartedAt = useRef(0)
+  const projectFileRef = useRef(null)
+  const [importBusy, setImportBusy] = useState(false)
   useEffect(() => {
     try { sessionStorage.setItem('ma-settings-tab', tab) } catch { /* ignore */ }
   }, [tab])
@@ -72,7 +74,7 @@ export function SettingsPage(props) {
   const apply = (r) => {
     setSt(r)
     setPeople(r.people || [])
-    setProjects(r.projects || [])
+    setProjects((r.projects || []).map((p) => ({ name: p.name || '', aliases: p.aliases || '', code: p.code || '' })))
     setTerms(r.terms || [])
     const L = r.llm || {}
     setLlm({ preset: L.preset || 'deepseek', baseUrl: L.baseUrl || '', model: L.model || '', apiKey: '' })
@@ -125,6 +127,24 @@ export function SettingsPage(props) {
     }).catch((er) => {
       toast(String(er && er.message || er)); throw er
     })
+  }
+  const importProjectCsv = (file) => {
+    if (!file || importBusy) return
+    setImportBusy(true)
+    const reader = new FileReader()
+    reader.onload = () => {
+      api('/api/settings/projects-import', { csv: String(reader.result || '') }).then((r) => {
+        apply(r)
+        const im = r.import || {}
+        const parts = []
+        if (im.added) parts.push('新增 ' + im.added)
+        if (im.updated) parts.push('更新 ' + im.updated)
+        if (im.skipped) parts.push('跳过 ' + im.skipped)
+        toast(parts.length ? ('已导入 · ' + parts.join('，')) : '没有新项目')
+      }).catch((er) => toast(String(er && er.message || er))).finally(() => setImportBusy(false))
+    }
+    reader.onerror = () => { toast('读不了这个文件'); setImportBusy(false) }
+    reader.readAsText(file, 'UTF-8')
   }
   const doFullSync = () => {
     if (syncBusy) return
@@ -213,7 +233,7 @@ export function SettingsPage(props) {
   const peoplePane = (
     <div className="page-inner">
       <h1>称呼</h1>
-      <p className="lede">总结时把口语、简称和听错落到正式写法。</p>
+      <p className="lede">{glossaryKind === 'projects' ? '正式名用于上传和检索。可从项目清单 CSV 导入编号和名称，重复的会跳过。' : '总结时把口语、简称和听错落到正式写法。'}</p>
       <div className="filters">
         {GLOSSARY_TABS.map((x) => (
           <button key={x.id} className={glossaryKind === x.id ? 'on' : ''} onClick={() => setGlossaryKind(x.id)}>{x.label}</button>
@@ -223,7 +243,7 @@ export function SettingsPage(props) {
         ? kindRows.map((p, i) => {
           const dup = splitAliases(p.aliases).some((a) => shared.has(a.toLowerCase()))
           return (
-            <div className="person" key={kindMeta.id + '-' + i}>
+            <div className={'person' + (kindMeta.id === 'projects' ? ' has-code' : '')} key={kindMeta.id + '-' + i}>
               <input
                 type="text"
                 placeholder={kindMeta.namePh}
@@ -232,6 +252,18 @@ export function SettingsPage(props) {
                   const n = kindRows.slice(); n[i] = { ...n[i], name: ev.target.value }; setKindRows(kindMeta.id, n)
                 }}
               />
+              {kindMeta.id === 'projects'
+                ? (
+                  <input
+                    type="text"
+                    placeholder={kindMeta.codePh}
+                    value={p.code || ''}
+                    onChange={(ev) => {
+                      const n = kindRows.slice(); n[i] = { ...n[i], code: ev.target.value }; setKindRows(kindMeta.id, n)
+                    }}
+                  />
+                )
+                : null}
               <div className="alias-cell">
                 <input
                   type="text"
@@ -248,8 +280,27 @@ export function SettingsPage(props) {
           )
         })
         : <p className="empty">还没有。加一行即可。</p>}
-      <button className="quiet" onClick={() => setKindRows(kindMeta.id, kindRows.concat([{ name: '', aliases: '' }]))}>{kindMeta.add}</button>
+      <button className="quiet" onClick={() => setKindRows(kindMeta.id, kindRows.concat([{ name: '', aliases: '', code: '' }]))}>{kindMeta.add}</button>
       <button className="primary" style={{ marginLeft: 8 }} onClick={() => persistKind(kindMeta.id, kindRows).then(() => toast('已保存')).catch(() => {})}>保存</button>
+      {kindMeta.id === 'projects'
+        ? (
+          <>
+            <input
+              ref={projectFileRef}
+              type="file"
+              accept=".csv,text/csv"
+              style={{ display: 'none' }}
+              onChange={(ev) => {
+                const f = ev.target.files && ev.target.files[0]
+                ev.target.value = ''
+                if (f) importProjectCsv(f)
+              }}
+            />
+            <button className="quiet" disabled={importBusy} onClick={() => projectFileRef.current && projectFileRef.current.click()}>{importBusy ? '导入中…' : '导入清单'}</button>
+            <a className="quiet" href="/项目清单模板.csv" download="项目清单模板.csv">下载模板</a>
+          </>
+        )
+        : null}
       <p className="status" style={{ marginTop: 28 }}>总结用默认提炼规则。</p>
     </div>
   )
@@ -287,7 +338,7 @@ export function SettingsPage(props) {
   const kbPane = (
     <div className="page-inner">
       <h1>上传</h1>
-      <p className="lede">详情里点上传时写入这里。一台 RAGFlow、四个库。项目会议、部门会议各进一个库，不同项目或部门用标签区分。</p>
+      <p className="lede">详情里点上传时写入这里。一台 RAGFlow、四个库。项目会议进同一个库，用项目名（及可选编号）区分，不按项目拆库。</p>
       <div className="field"><span>地址</span><input type="text" placeholder="RAGFlow 地址" value={kb.url} onChange={(ev) => setKb({ ...kb, url: ev.target.value })} /></div>
       <div className="field">
         <span>密钥</span>
@@ -322,7 +373,7 @@ export function SettingsPage(props) {
   const classifyPane = (
     <div className="page-inner">
       <h1>类型规则</h1>
-      <p className="lede">新听记入库时，按从上到下第一条命中的规则填写类型和标签。手改过的类型不覆盖。库里已有的要点「套用到未定场次」。</p>
+      <p className="lede">新听记入库时，按从上到下第一条命中的规则填写类型和标签。项目会会同时填项目名。手改过的类型不覆盖。库里已有的要点「套用到未定场次」。</p>
       <div className="filters">
         <button
           className={classify.projectFromGlossary ? 'on' : ''}
