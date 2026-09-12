@@ -34,6 +34,17 @@ function sharedAliasSet(rows) {
   return shared
 }
 
+function foldText(s) {
+  return String(s || '').trim().toLowerCase()
+}
+
+function rowMatchesQuery(row, q) {
+  if (!q) return true
+  const hay = [row && row.name, row && row.code, row && row.aliases].map(foldText).join(' ')
+  if (!hay.trim()) return true
+  return hay.includes(q)
+}
+
 export function SettingsPage(props) {
   const toast = props.toast
   const [tab, setTab] = useState(() => {
@@ -65,6 +76,9 @@ export function SettingsPage(props) {
   const syncStartedAt = useRef(0)
   const projectFileRef = useRef(null)
   const [importBusy, setImportBusy] = useState(false)
+  const [ht, setHt] = useState({ url: '', apiKey: '' })
+  const [htMsg, setHtMsg] = useState('')
+  const [glossaryQuery, setGlossaryQuery] = useState('')
   useEffect(() => {
     try { sessionStorage.setItem('ma-settings-tab', tab) } catch { /* ignore */ }
   }, [tab])
@@ -84,6 +98,8 @@ export function SettingsPage(props) {
       apiKey: '',
       datasets: Object.assign({ mgmt: '', ops: '', project: '', dept: '' }, K.datasets || {}),
     })
+    const H = r.ht || {}
+    setHt({ url: H.url || '', apiKey: '' })
     const C = r.classify || {}
     setClassify({
       projectFromGlossary: C.projectFromGlossary !== false,
@@ -171,6 +187,36 @@ export function SettingsPage(props) {
     if (kb.apiKey.trim()) body.apiKey = kb.apiKey.trim()
     api('/api/settings', { kb: body }).then((r) => { apply(r); toast('已保存') }).catch((er) => toast(String(er && er.message || er)))
   }
+  const saveHt = () => {
+    const body = { url: ht.url }
+    if (ht.apiKey.trim()) body.apiKey = ht.apiKey.trim()
+    api('/api/settings', { ht: body }).then((r) => { apply(r); toast('已保存') }).catch((er) => toast(String(er && er.message || er)))
+  }
+  const testHt = () => {
+    setTesting('ht'); setHtMsg('')
+    api('/api/settings/ht-test', {}).then((r) => {
+      if (!r.ok) { setHtMsg(r.error || '不通'); return }
+      const bits = []
+      if (r.caller) bits.push(r.caller)
+      bits.push('见到 ' + (r.count || 0) + ' 个项目')
+      setHtMsg('可用 · ' + bits.join(' · '))
+    }).catch((er) => setHtMsg(String(er && er.message || er))).finally(() => setTesting(''))
+  }
+  const syncHtProjects = () => {
+    setTesting('ht-sync'); setHtMsg('')
+    api('/api/settings/projects-sync', {}).then((r) => {
+      apply(r)
+      const im = r.import || {}
+      const parts = []
+      if (im.matched != null) parts.push('命中 ' + im.matched)
+      if (im.added) parts.push('新增 ' + im.added)
+      if (im.updated) parts.push('更新 ' + im.updated)
+      if (im.skipped) parts.push('跳过 ' + im.skipped)
+      const text = parts.length ? ('已同步 · ' + parts.join('，')) : '没有新项目'
+      setHtMsg(text)
+      toast(text)
+    }).catch((er) => setHtMsg(String(er && er.message || er))).finally(() => setTesting(''))
+  }
   const setRule = (i, patch) => {
     const n = classify.rules.slice()
     n[i] = { ...n[i], ...patch }
@@ -230,61 +276,101 @@ export function SettingsPage(props) {
   const kindMeta = GLOSSARY_TABS.find((x) => x.id === glossaryKind) || GLOSSARY_TABS[0]
   const kindRows = lists[kindMeta.id] || []
   const shared = sharedAliasSet(kindRows)
+  const filterQ = foldText(glossaryQuery)
+  const visibleRows = kindRows.map((p, i) => ({ p, i })).filter(({ p }) => rowMatchesQuery(p, filterQ))
   const peoplePane = (
-    <div className="page-inner">
+    <div className={'page-inner' + (kindMeta.id === 'projects' ? ' wide' : '')}>
       <h1>称呼</h1>
-      <p className="lede">{glossaryKind === 'projects' ? '正式名用于上传和检索。可从项目清单 CSV 导入编号和名称，重复的会跳过。' : '总结时把口语、简称和听错落到正式写法。'}</p>
+      <p className="lede">{glossaryKind === 'projects' ? '正式名用于上传和检索。可从外部系统同步你可见的项目，或导入项目清单 CSV。' : '总结时把口语、简称和听错落到正式写法。'}</p>
       <div className="filters">
         {GLOSSARY_TABS.map((x) => (
-          <button key={x.id} className={glossaryKind === x.id ? 'on' : ''} onClick={() => setGlossaryKind(x.id)}>{x.label}</button>
+          <button
+            key={x.id}
+            className={glossaryKind === x.id ? 'on' : ''}
+            onClick={() => {
+              setGlossaryKind(x.id)
+              setGlossaryQuery('')
+            }}
+          >{x.label}</button>
         ))}
       </div>
       {kindRows.length
-        ? kindRows.map((p, i) => {
-          const dup = splitAliases(p.aliases).some((a) => shared.has(a.toLowerCase()))
-          return (
-            <div className={'person' + (kindMeta.id === 'projects' ? ' has-code' : '')} key={kindMeta.id + '-' + i}>
+        ? (
+          <>
+            <div className="glossary-toolbar">
               <input
                 type="text"
-                placeholder={kindMeta.namePh}
-                value={p.name}
-                onChange={(ev) => {
-                  const n = kindRows.slice(); n[i] = { ...n[i], name: ev.target.value }; setKindRows(kindMeta.id, n)
-                }}
+                placeholder={kindMeta.id === 'projects' ? '按名称、编号、别名筛选' : '按名称、别名筛选'}
+                value={glossaryQuery}
+                onChange={(ev) => setGlossaryQuery(ev.target.value)}
               />
-              {kindMeta.id === 'projects'
-                ? (
-                  <input
-                    type="text"
-                    placeholder={kindMeta.codePh}
-                    value={p.code || ''}
-                    onChange={(ev) => {
-                      const n = kindRows.slice(); n[i] = { ...n[i], code: ev.target.value }; setKindRows(kindMeta.id, n)
-                    }}
-                  />
-                )
-                : null}
-              <div className="alias-cell">
-                <input
-                  type="text"
-                  placeholder={kindMeta.aliasPh}
-                  value={p.aliases}
-                  onChange={(ev) => {
-                    const n = kindRows.slice(); n[i] = { ...n[i], aliases: ev.target.value }; setKindRows(kindMeta.id, n)
-                  }}
-                />
-                {dup ? <span className="dup">不唯一</span> : null}
-              </div>
-              <button className="quiet" onClick={() => persistKind(kindMeta.id, kindRows.filter((_, j) => j !== i))}>删除</button>
+              <span className="n">{filterQ && visibleRows.length !== kindRows.length ? ('显示 ' + visibleRows.length + ' / ' + kindRows.length) : ('共 ' + kindRows.length + ' 个')}</span>
             </div>
-          )
-        })
+            <div className="glossary-list">
+              <div className={'person person-head' + (kindMeta.id === 'projects' ? ' has-code' : '')}>
+                <span>名称</span>
+                {kindMeta.id === 'projects' ? <span>编号</span> : null}
+                <span>别名</span>
+                <span />
+              </div>
+              {visibleRows.length
+                ? visibleRows.map(({ p, i }) => {
+                  const dup = splitAliases(p.aliases).some((a) => shared.has(a.toLowerCase()))
+                  return (
+                    <div className={'person' + (kindMeta.id === 'projects' ? ' has-code' : '')} key={kindMeta.id + '-' + i}>
+                      <input
+                        type="text"
+                        placeholder={kindMeta.namePh}
+                        value={p.name}
+                        onChange={(ev) => {
+                          const n = kindRows.slice(); n[i] = { ...n[i], name: ev.target.value }; setKindRows(kindMeta.id, n)
+                        }}
+                      />
+                      {kindMeta.id === 'projects'
+                        ? (
+                          <input
+                            type="text"
+                            placeholder={kindMeta.codePh}
+                            value={p.code || ''}
+                            onChange={(ev) => {
+                              const n = kindRows.slice(); n[i] = { ...n[i], code: ev.target.value }; setKindRows(kindMeta.id, n)
+                            }}
+                          />
+                        )
+                        : null}
+                      <div className="alias-cell">
+                        <input
+                          type="text"
+                          placeholder={kindMeta.aliasPh}
+                          value={p.aliases}
+                          onChange={(ev) => {
+                            const n = kindRows.slice(); n[i] = { ...n[i], aliases: ev.target.value }; setKindRows(kindMeta.id, n)
+                          }}
+                        />
+                        {dup ? <span className="dup">不唯一</span> : null}
+                      </div>
+                      <button className="quiet" onClick={() => persistKind(kindMeta.id, kindRows.filter((_, j) => j !== i))}>删除</button>
+                    </div>
+                  )
+                })
+                : <p className="empty">没有匹配「{glossaryQuery.trim()}」</p>}
+            </div>
+          </>
+        )
         : <p className="empty">还没有。加一行即可。</p>}
-      <button className="quiet" onClick={() => setKindRows(kindMeta.id, kindRows.concat([{ name: '', aliases: '', code: '' }]))}>{kindMeta.add}</button>
+      <button
+        className="quiet"
+        onClick={() => {
+          setGlossaryQuery('')
+          setKindRows(kindMeta.id, kindRows.concat([{ name: '', aliases: '', code: '' }]))
+        }}
+      >{kindMeta.add}</button>
       <button className="primary" style={{ marginLeft: 8 }} onClick={() => persistKind(kindMeta.id, kindRows).then(() => toast('已保存')).catch(() => {})}>保存</button>
       {kindMeta.id === 'projects'
         ? (
-          <>
+          <div className="block" style={{ marginTop: 28 }}>
+            <h3>导入清单</h3>
+            <p className="lede">CSV 需有「项目编号」「项目名称」列。已有项目按编号或名称合并，本地别名保留。</p>
             <input
               ref={projectFileRef}
               type="file"
@@ -298,7 +384,7 @@ export function SettingsPage(props) {
             />
             <button className="quiet" disabled={importBusy} onClick={() => projectFileRef.current && projectFileRef.current.click()}>{importBusy ? '导入中…' : '导入清单'}</button>
             <a className="quiet" href="/项目清单模板.csv" download="项目清单模板.csv">下载模板</a>
-          </>
+          </div>
         )
         : null}
       <p className="status" style={{ marginTop: 28 }}>总结用默认提炼规则。</p>
@@ -368,6 +454,31 @@ export function SettingsPage(props) {
         }).catch((er) => setTestMsg(String(er && er.message || er))).finally(() => setTesting(''))
       }}>{testing === 'kb' ? '在测…' : '测一下'}</button>
       {testMsg && tab === 'kb' ? <p className="status">{testMsg}</p> : null}
+    </div>
+  )
+  const extPane = (
+    <div className="page-inner">
+      <h1>外部系统</h1>
+      <p className="lede">接公司数智系统，把你有权看的项目同步进称呼表。地址和令牌只存在本机。</p>
+      <div className="block">
+        <h3>公司数智系统</h3>
+        <p className="lede">令牌在数智系统「个人中心 · 第三方应用接入」创建。同步会拉全部有效项目，本地别名保留。</p>
+        {st.ht && st.ht.envLocked ? <p className="hint">当前由环境变量覆盖设置页。</p> : null}
+        <div className="field"><span>地址</span><input type="text" placeholder="数智系统地址，问同事要" value={ht.url} onChange={(ev) => setHt({ ...ht, url: ev.target.value })} /></div>
+        <div className="field">
+          <span>令牌</span>
+          <input
+            type="password"
+            placeholder={st.ht && st.ht.keySet ? '已保存' : 'htdc_pat_…'}
+            value={ht.apiKey}
+            onChange={(ev) => setHt({ ...ht, apiKey: ev.target.value })}
+          />
+        </div>
+        <button className="primary" onClick={saveHt}>保存</button>
+        <button className="quiet" disabled={testing === 'ht'} onClick={testHt}>{testing === 'ht' ? '在测…' : '测一下'}</button>
+        <button className="quiet" disabled={testing === 'ht-sync'} onClick={syncHtProjects}>{testing === 'ht-sync' ? '同步中…' : '同步项目'}</button>
+        {htMsg ? <p className="status">{htMsg}</p> : null}
+      </div>
     </div>
   )
   const classifyPane = (
@@ -514,10 +625,11 @@ export function SettingsPage(props) {
         : <p className="empty">还没有日志。</p>}
     </div>
   )
-  const panes = { people: peoplePane, classify: classifyPane, llm: llmPane, kb: kbPane, mcp: mcpPane, sync: syncPane, logs: logsPane }
+  const panes = { people: peoplePane, classify: classifyPane, llm: llmPane, kb: kbPane, ext: extPane, mcp: mcpPane, sync: syncPane, logs: logsPane }
   const glossaryCount = people.length + projects.length + terms.length
   const llmStatus = (st.llm && st.llm.model) || (st.llm && st.llm.keySet ? '已配' : '未配置')
   const kbStatus = (st.kb && st.kb.filled) ? (st.kb.filled + '/4') : '未填'
+  const htStatus = (st.ht && st.ht.keySet) ? '已配' : '未配'
   const mcpStatus = mcp.enabled ? '开' : '关'
   const classifyStatus = String((classify.rules || []).length || (classify.projectFromGlossary ? '词表' : '未配'))
   const syncStatusLabel = pulling ? '同步中' : (lastSyncLabel(syncSt) ? '已同步' : '未同步')
@@ -525,8 +637,8 @@ export function SettingsPage(props) {
     <div className="settings">
       <aside className="cats">
         <h2>设置</h2>
-        {[['people', '称呼', String(glossaryCount)], ['classify', '类型', classifyStatus], ['llm', '模型', llmStatus], ['kb', '上传', kbStatus], ['mcp', 'MCP', mcpStatus], ['sync', '听记', syncStatusLabel], ['logs', '日志', String(logs.length || '')]].map(([id, label, n]) => (
-          <div className={'cat' + (tab === id ? ' on' : '')} key={id} onClick={() => { setTab(id); setTestMsg('') }}>
+        {[['people', '称呼', String(glossaryCount)], ['classify', '类型', classifyStatus], ['llm', '模型', llmStatus], ['kb', '上传', kbStatus], ['ext', '外部系统', htStatus], ['mcp', 'MCP', mcpStatus], ['sync', '听记', syncStatusLabel], ['logs', '日志', String(logs.length || '')]].map(([id, label, n]) => (
+          <div className={'cat' + (tab === id ? ' on' : '')} key={id} onClick={() => { setTab(id); setTestMsg(''); setHtMsg('') }}>
             {label + ' '}<span className="n">{n}</span>
           </div>
         ))}

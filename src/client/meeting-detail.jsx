@@ -1,9 +1,30 @@
 import React from 'react'
 import { api, fallbackCopy } from './api.js'
 import { MEETING_TYPES, PUBLISH_TYPES, companyMark, fmtDateTime, srcLabel, typeLabel, uploadBtnLabel, ymd } from './format.js'
-import { ConfirmSheet, InlineComposer, Md, SheetFrame, CheckMark, TitleInput, TodoRowTitle } from './ui.jsx'
+import { ConfirmSheet, InlineComposer, Md, SheetFrame, CheckMark, TitleInput, TodoRowTitle, useDebounced } from './ui.jsx'
 
 const e = React.createElement
+
+function foldProject(s) {
+  return String(s || '').trim().toLowerCase()
+}
+
+function unionProjects(local, remote) {
+  const out = []
+  const seen = new Set()
+  const push = (p) => {
+    const name = String(p && p.name || '').trim()
+    if (!name) return
+    const code = String(p && p.code || '').trim()
+    const keys = [foldProject(code), foldProject(name)].filter(Boolean)
+    if (keys.some((k) => seen.has(k))) return
+    keys.forEach((k) => seen.add(k))
+    out.push({ name, code })
+  }
+  ;(remote || []).forEach(push)
+  ;(local || []).forEach(push)
+  return out
+}
 
 function writebackToast(r) {
   const msgs = []
@@ -60,6 +81,7 @@ export function MeetingDetail(props) {
   const [pickQuery, setPickQuery] = React.useState('')
   const [addingPick, setAddingPick] = React.useState(false)
   const [pickBusy, setPickBusy] = React.useState(false)
+  const [remoteProjects, setRemoteProjects] = React.useState([])
   const [pubRemote, setPubRemote] = React.useState(null)
   const [pubOperator, setPubOperator] = React.useState('')
   const [pubBusy, setPubBusy] = React.useState(false)
@@ -99,6 +121,30 @@ export function MeetingDetail(props) {
   React.useEffect(() => {
     if (editing || confirmUploadGate) refreshProjects()
   }, [editing, confirmUploadGate, refreshProjects])
+  const editQDebounced = useDebounced(editProjectQuery, 280)
+  const pickQDebounced = useDebounced(pickQuery, 280)
+  React.useEffect(() => {
+    const raw = confirmUploadGate ? pickQDebounced : editQDebounced
+    const q = String(raw || '').trim()
+    if ((!editing && !confirmUploadGate) || [...q].length < 2) {
+      setRemoteProjects([])
+      return undefined
+    }
+    let stop = false
+    api('/api/ht/projects?q=' + encodeURIComponent(q)).then((r) => {
+      if (stop) return
+      if (!r || r.configured === false) { setRemoteProjects([]); return }
+      setRemoteProjects(r.items || [])
+    }).catch(() => { if (!stop) setRemoteProjects([]) })
+    return () => { stop = true }
+  }, [editing, confirmUploadGate, editQDebounced, pickQDebounced])
+  const rememberProject = React.useCallback((p) => {
+    const name = String(p && p.name || '').trim()
+    if (!name) return
+    const row = { name, code: String(p && p.code || '').trim() }
+    setD((prev) => prev ? { ...prev, projects: unionProjects(prev.projects, [row]) } : prev)
+    api('/api/settings/projects-sync', { items: [row] }).catch(() => {})
+  }, [])
   const doDeep = () => {
     if (deeping) return
     if (String(deep || '').trim()) { setConfirmDeep(true); return }
@@ -117,9 +163,10 @@ export function MeetingDetail(props) {
       toast('总结已保存到本机')
     }).catch((err) => toast('生成失败: ' + String(err && err.message || err))).finally(() => setDeeping(false))
   }
-  const copyDeep = (text) => {
+  const copyText = (text) => {
     const w = (typeof window !== 'undefined') ? window : globalThis
     const plain = String(text || '')
+    if (!plain) return
     const done = () => { setCopied(true); setTimeout(() => setCopied(false), 1500) }
     if (w.navigator && w.navigator.clipboard && w.navigator.clipboard.writeText) {
       w.navigator.clipboard.writeText(plain).then(done).catch(() => { fallbackCopy(w, plain); done() })
@@ -174,6 +221,7 @@ export function MeetingDetail(props) {
   }
   const goSub = (id) => {
     if (editingBody) cancelBody()
+    setCopied(false)
     setSub(id)
   }
   const commitTitle = (opts) => {
@@ -435,7 +483,7 @@ export function MeetingDetail(props) {
   }
   const projectHits = (() => {
     const q = String(editProjectQuery || '').trim().toLowerCase()
-    const rows = (d.projects || []).slice()
+    const rows = unionProjects(d.projects || [], remoteProjects)
     if (projectName && !rows.some((p) => p.name === projectName)) {
       rows.unshift({ name: projectName, code: '' })
     }
@@ -485,7 +533,12 @@ export function MeetingDetail(props) {
                 }, '未标'),
                 projectHits.list.map((p) => e('button', {
                   type: 'button', key: 'proj-' + p.name, className: projectName === p.name ? 'on' : '',
-                  onClick: () => { setProjectName(p.name); setAddingProject(false); setEditProjectQuery('') },
+                  onClick: () => {
+                    setProjectName(p.name)
+                    setAddingProject(false)
+                    setEditProjectQuery('')
+                    rememberProject(p)
+                  },
                 }, p.name + (p.code ? ' · ' + p.code : ''))),
                 addingProject
                   ? e(InlineComposer, {
@@ -539,7 +592,10 @@ export function MeetingDetail(props) {
       items.unshift(e('button', {
         className: 'sync-pill', key: 'gen', onClick: doDeep, disabled: deeping,
       }, deeping ? '生成中' : '重新生成'))
-      items.push(e('button', { className: 'quiet', key: 'cp', onClick: () => copyDeep(deep), disabled: deeping }, copied ? '已复制' : '复制'))
+    }
+    const copySrc = sub === 'record' ? (d && d.summary) : (sub === 'transcript' ? txText : deep)
+    if (String(copySrc || '').trim()) {
+      items.push(e('button', { className: 'quiet', key: 'cp', onClick: () => copyText(copySrc), disabled: deeping }, copied ? '已复制' : '复制'))
     }
     return items
   })()
@@ -716,7 +772,7 @@ export function MeetingDetail(props) {
             e('div', { className: 'cat-pills' },
               (() => {
                 const q = String(pickQuery || '').trim().toLowerCase()
-                const rows = (d.projects || []).filter((p) => {
+                const rows = unionProjects(d.projects || [], remoteProjects).filter((p) => {
                   if (!q) return true
                   return String(p.name || '').toLowerCase().includes(q) || String(p.code || '').toLowerCase().includes(q)
                 })
@@ -728,7 +784,7 @@ export function MeetingDetail(props) {
                   key: 'pick-' + p.name,
                   className: pickName === p.name ? 'on' : '',
                   disabled: pickBusy,
-                  onClick: () => { setPickName(p.name); setAddingPick(false) },
+                  onClick: () => { setPickName(p.name); setAddingPick(false); rememberProject(p) },
                 }, p.name + (p.code ? ' · ' + p.code : '')))
                 pills.push(addingPick
                   ? e(InlineComposer, {
