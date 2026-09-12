@@ -14,6 +14,7 @@ import { ask, summarizeTranscript, testLlm } from '../lib/ask.js'
 import { loadGlossary, glossaryForSettings, saveUserNamedList } from '../lib/glossary.js'
 import { projectPatch, projectChoices } from '../lib/project.js'
 import { importProjectsFromCsv } from '../lib/project-csv.js'
+import { searchProjectReferences, syncAllProjects, syncProjectsFromItems, syncProjectsFromQuery, testHtworkbuddy } from '../lib/htworkbuddy.js'
 import { indexChunkIds } from '../lib/embed.js'
 import { overview, todosByRange, keywordSearch, meetingCount } from '../lib/overview.js'
 import {
@@ -40,6 +41,7 @@ import { handleMcpHttp } from '../lib/mcp-server.js'
 import {
   resolveLlmConfig, saveLlmConfig, llmPublicView,
   resolveKbConfig, saveKbConfig, kbPublicView,
+  resolveHtConfig, saveHtConfig, htPublicView,
   resolveWriteback, saveWriteback,
 } from '../lib/runtime-config.js'
 import { normalizeType, canPublishType } from '../lib/meeting-type.js'
@@ -468,6 +470,7 @@ function settingsPayload() {
   const db = open()
   const llm = llmPublicView(resolveLlmConfig(db))
   const kb = kbPublicView(resolveKbConfig(db))
+  const ht = htPublicView(resolveHtConfig(db))
   const cats = getTodoCats(db)
   const writeback = resolveWriteback(db)
   const classify = classifyPublicView(loadClassifyConfig(db))
@@ -478,6 +481,7 @@ function settingsPayload() {
     terms: g.terms,
     llm,
     kb,
+    ht,
     cats,
     writeback,
     classify,
@@ -498,6 +502,7 @@ app.post('/api/settings', async (req, res) => {
     const db = open()
     if (body.llm) saveLlmConfig(db, body.llm)
     if (body.kb) saveKbConfig(db, body.kb)
+    if (body.ht) saveHtConfig(db, body.ht)
     if (body.kbUrl !== undefined || body.kbKey !== undefined) {
       saveKbConfig(db, { url: body.kbUrl, apiKey: body.kbKey })
     }
@@ -519,6 +524,37 @@ app.post('/api/settings/projects-import', async (req, res) => {
     const r = importProjectsFromCsv(csv)
     if (r.error) return res.status(400).json({ error: r.error })
     ok(res, { ...settingsPayload(), import: { added: r.added, updated: r.updated, skipped: r.skipped, total: r.total } })
+  } catch (e) { fail(res, e) }
+})
+
+app.get('/api/ht/projects', async (req, res) => {
+  try {
+    const q = String(req.query.q || '')
+    const r = await searchProjectReferences(q)
+    if (r.configured === false) return ok(res, { configured: false, items: [] })
+    if (r.error) return res.status(400).json({ error: r.error })
+    ok(res, { configured: true, items: r.items || [], count: r.count, caller: r.caller || null })
+  } catch (e) { fail(res, e) }
+})
+
+app.post('/api/settings/ht-test', async (_req, res) => {
+  try { ok(res, await testHtworkbuddy()) } catch (e) { ok(res, { ok: false, error: String((e && e.message) || e) }) }
+})
+
+app.post('/api/settings/projects-sync', async (req, res) => {
+  try {
+    const body = req.body || {}
+    const q = String(body.q || '').trim()
+    const rows = Array.isArray(body.items) ? body.items : []
+    let r
+    if (rows.length) r = syncProjectsFromItems(rows)
+    else if (q) r = await syncProjectsFromQuery(q)
+    else r = await syncAllProjects()
+    if (r.error) return res.status(400).json({ error: r.error })
+    ok(res, {
+      ...settingsPayload(),
+      import: { added: r.added, updated: r.updated, skipped: r.skipped, total: r.total, matched: r.matched },
+    })
   } catch (e) { fail(res, e) }
 })
 
