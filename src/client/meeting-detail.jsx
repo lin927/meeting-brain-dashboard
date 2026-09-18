@@ -354,7 +354,7 @@ export function MeetingDetail(props) {
     setRefreshBusy(true)
     cancelBody()
     setEditing(false)
-    api('/api/meeting/refresh', { id: uuid }).then((r) => {
+    api('/api/meeting/refresh', { id: uuid }, 'POST', { timeoutMs: 5 * 60 * 1000 }).then((r) => {
       setConfirmRefresh(false)
       setD(r)
       setTitle((r && r.title) || '')
@@ -367,7 +367,14 @@ export function MeetingDetail(props) {
       setTags((r && r.tags) || [])
       toast((r && r.refresh && r.refresh.message) || '已从钉钉重拉')
       if (onChanged) onChanged()
-    }).catch((err) => toast(String(err && err.message || err))).finally(() => setRefreshBusy(false))
+    }).catch((err) => {
+      const msg = String(err && err.message || err)
+      if (/timeout|timed out|TimeoutError/i.test(msg)) {
+        toast('还在从钉钉拉，请等几分钟再点这场会。先不要反复刷新网页。')
+      } else {
+        toast(msg)
+      }
+    }).finally(() => setRefreshBusy(false))
   }
   const doClassify = () => {
     if (classifyBusy) return
@@ -711,8 +718,11 @@ export function MeetingDetail(props) {
     }) : null,
     confirmRefresh ? e(ConfirmSheet, {
       title: '从钉钉重拉',
-      lede: '用钉钉最新的标题、记录、逐字稿和待办覆盖本机。本机手改过的记录、逐字稿不覆盖。本机总结、类型、项目、标签和是否上传都不变。',
+      lede: refreshBusy
+        ? '正在从钉钉拉标题、记录和逐字稿。长会可能要几分钟。请等提示「已从钉钉重拉」，先不要刷新网页。'
+        : '用钉钉最新的标题、记录、逐字稿和待办覆盖本机。本机手改过的记录、逐字稿不覆盖。本机总结、类型、项目、标签和是否上传都不变。长会可能要几分钟，拉完前请不要刷新网页。',
       confirmLabel: '重拉',
+      busyLabel: '重拉中…',
       busy: refreshBusy,
       onConfirm: doRefresh,
       onClose: () => { if (!refreshBusy) setConfirmRefresh(false) },

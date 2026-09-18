@@ -83,6 +83,7 @@ app.get('/api/meetings', async (req, res) => {
     ok(res, queryMeetings({
       q: req.query.q,
       tag: req.query.tag,
+      type: req.query.type,
       filter: req.query.filter,
       cursor: req.query.cursor,
       limit: req.query.limit,
@@ -350,17 +351,23 @@ app.post('/api/meeting/refresh', async (req, res) => {
     if (!id) return fail(res, new Error('缺少 id'))
     if (isSyncing()) return fail(res, new Error('正在同步中…请稍候'))
     const r = await refreshMeeting({ taskUuid: id })
-    if (r.chunkIds && r.chunkIds.length) {
-      try { await indexChunkIds(r.chunkIds) } catch (e) { console.error('index refresh:', e.message) }
-    }
     const bits = []
     if (r.keptRecord) bits.push('本机改过的记录未覆盖')
     if (r.keptTranscript) bits.push('本机改过的逐字稿未覆盖')
+    if (r.transcriptCount) bits.push('逐字稿 ' + r.transcriptCount + ' 段')
     const message = bits.length ? ('已从钉钉重拉；' + bits.join('，')) : '已从钉钉重拉'
     pushLog('更新', '重拉 ' + (r.title || id) + (bits.length ? '（' + bits.join('，') + '）' : ''))
     const detail = meetingDetail(id)
     if (detail) detail.refresh = { ok: true, keptRecord: r.keptRecord, keptTranscript: r.keptTranscript, message }
     ok(res, detail)
+    const ids = r.chunkIds || []
+    if (ids.length) {
+      setImmediate(() => {
+        indexChunkIds(ids).then((n) => {
+          if (n) console.log(`[refresh] 已向量化 ${n} 段`)
+        }).catch((e) => console.error('index refresh:', e.message))
+      })
+    }
   } catch (e) { fail(res, e) }
 })
 
