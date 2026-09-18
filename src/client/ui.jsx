@@ -142,12 +142,12 @@ export function ConfirmSheet(props) {
           onClick={props.onConfirm}
           disabled={props.busy}
         >
-          {props.busy ? '处理中' : (props.confirmLabel || '确定')}
+          {props.busy ? (props.busyLabel || '处理中') : (props.confirmLabel || '确定')}
         </button>
         {props.altLabel
           ? <button className="quiet" onClick={props.onAlt} disabled={props.busy}>{props.altLabel}</button>
           : null}
-        <button className="quiet" ref={cancelRef} onClick={props.onClose}>取消</button>
+        <button className="quiet" ref={cancelRef} onClick={props.onClose} disabled={props.busy}>取消</button>
       </div>
     </SheetFrame>
   )

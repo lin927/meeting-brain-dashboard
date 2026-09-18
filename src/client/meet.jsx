@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { api, qs } from './api.js'
 import {
-  MEET_PAGE, companyMark, fmtShort, groupMonths, lastSyncLabel, lastSyncTitle, srcLabel, syncProgressLabel,
+  MEET_PAGE, MEETING_TYPES, companyMark, fmtShort, groupMonths, lastSyncLabel, lastSyncTitle, srcLabel, syncProgressLabel,
 } from './format.js'
 import { Md, useDebounced } from './ui.jsx'
 import { ImportSheet, MeetingDetail } from './meeting-detail.jsx'
@@ -11,12 +11,12 @@ export function MeetPage(props) {
   const [items, setItems] = useState(null)
   const [total, setTotal] = useState(0)
   const [nextCursor, setNextCursor] = useState(null)
-  const [tags, setTags] = useState([])
   const [err, setErr] = useState(null)
   const [st, setSt] = useState(null)
   const [syncing, setSyncing] = useState(false)
   const [moreBusy, setMoreBusy] = useState(false)
   const [meetFilter, setMeetFilter] = useState('all')
+  const [meetType, setMeetType] = useState('')
   const [meetTag, setMeetTag] = useState('')
   const [meetQuery, setMeetQuery] = useState('')
   const [askQ, setAskQ] = useState('')
@@ -40,6 +40,7 @@ export function MeetPage(props) {
     return api('/api/meetings' + qs({
       q: qDebounced,
       tag: meetTag,
+      type: meetType,
       filter: meetFilter === 'company' ? 'company' : '',
       cursor,
       limit: MEET_PAGE,
@@ -49,14 +50,13 @@ export function MeetPage(props) {
       setErr(null)
       setTotal(r.total || 0)
       setNextCursor(r.nextCursor || null)
-      if (!append && r.tags) setTags(r.tags)
       setItems((prev) => append ? (prev || []).concat(next) : next)
     }).catch((er) => {
       if (id !== reqId.current) return
       if (!append) setErr(String(er && er.message || er))
       else toast(String(er && er.message || er))
     }).finally(() => { if (append) setMoreBusy(false) })
-  }, [qDebounced, meetTag, meetFilter])
+  }, [qDebounced, meetTag, meetType, meetFilter])
 
   useEffect(() => { fetchPage() }, [fetchPage, tick])
   useEffect(() => {
@@ -202,27 +202,31 @@ export function MeetPage(props) {
         {askA ? <div className="ans"><Md text={askA} linkMap={linkMap} onMeetingClick={(id) => id && setSelected(id)} /></div> : null}
         <div className="filters">
           <button
-            className={'meet-filter' + (meetFilter === 'all' && !meetTag ? ' on' : '')}
-            onClick={() => { setMeetFilter('all'); setMeetTag('') }}
+            className={'meet-filter' + (meetFilter === 'all' && !meetTag && !meetType ? ' on' : '')}
+            onClick={() => { setMeetFilter('all'); setMeetTag(''); setMeetType('') }}
           >全部</button>
           <button
             className={'meet-filter' + (meetFilter === 'company' ? ' on' : '')}
-            onClick={() => setMeetFilter('company')}
+            onClick={() => setMeetFilter(meetFilter === 'company' ? 'all' : 'company')}
           >已到公司</button>
-        </div>
-        <div className="tags" style={{ margin: '0 0 10px' }}>
-          {tags.map((t) => (
+          {MEETING_TYPES.map((t) => (
             <button
-              type="button"
-              className={'tag' + (meetTag === t ? ' active' : '')}
               key={t}
-              onClick={() => setMeetTag(meetTag === t ? '' : t)}
+              className={'meet-filter' + (meetType === t ? ' on' : '')}
+              onClick={() => setMeetType(meetType === t ? '' : t)}
             >{t}</button>
           ))}
         </div>
+        {meetTag
+          ? (
+            <div className="tags" style={{ margin: '0 0 10px' }}>
+              <button type="button" className="tag active" onClick={() => setMeetTag('')}>{meetTag}<span className="x">×</span></button>
+            </div>
+          )
+          : null}
         <input
           type="text"
-          placeholder="过滤标题"
+          placeholder="过滤标题、项目或标签"
           value={meetQuery}
           onChange={(ev) => setMeetQuery(ev.target.value)}
           style={{ marginBottom: 8 }}

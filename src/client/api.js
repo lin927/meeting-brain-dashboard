@@ -8,7 +8,7 @@ const fetchGlobal = () => {
 
 const forcedApi = () => (typeof window !== 'undefined' && window.MEETING_BRAIN_API) || null
 
-async function probeBackend(port, timeoutMs = 1500) {
+async function probeBackend(port, timeoutMs = 2500) {
   const f = fetchGlobal()
   try {
     const res = await f(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(timeoutMs) })
@@ -27,7 +27,7 @@ async function resolveApi() {
   if (forced) return forced
   if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
     try {
-      const res = await fetchGlobal()('/api/health', { signal: AbortSignal.timeout(800) })
+      const res = await fetchGlobal()('/api/health', { signal: AbortSignal.timeout(2500) })
       if (res.ok) {
         const j = await res.json()
         if (j && j.ok && j.name === 'meeting-brain') return ''
@@ -57,12 +57,12 @@ export function qs(params) {
   return s ? '?' + s : ''
 }
 
-export async function api(path, body, method) {
+export async function api(path, body, method, opts) {
   const base = await resolveApi()
   if (base === null) throw new Error('无法连接本地会议后端（3400-3404 均无响应），请确认后端已启动')
   const url = base + path
   const verb = method || (body === undefined ? 'GET' : 'POST')
-  const timeoutMs = verb === 'GET' ? 20000 : 180000
+  const timeoutMs = (opts && opts.timeoutMs) || (verb === 'GET' ? 20000 : 180000)
   const res = await fetchGlobal()(url, body === undefined
     ? { method: verb, signal: AbortSignal.timeout(timeoutMs) }
     : { method: verb, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs) })
