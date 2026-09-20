@@ -32,6 +32,7 @@ import { refreshMeeting } from '../lib/pull.js'
 import { updateDingTalkTitle, updateDingTalkSummary } from '../lib/minutes-write.js'
 import { syncStatus } from '../lib/sync-status.js'
 import { persistSyncResult, isSyncing, syncProgress, enqueueSync } from '../lib/sync-run.js'
+import { applyAppUpdate, armAppUpdate, checkAppUpdate, scheduleRestart } from '../lib/app-update.js'
 import { listLogs, pushLog } from '../lib/runtime-log.js'
 import {
   loadClassifyConfig, saveClassifyConfig, classifyPublicView, classifyExisting,
@@ -193,6 +194,22 @@ app.post('/api/sync', async (req, res) => {
     success: true, started: true, syncing: true, full,
     message: full ? '开始全量同步，页面可继续用' : '开始更新，页面可继续用',
   })
+})
+
+app.get('/api/app/update', async (req, res) => {
+  try {
+    const fresh = String(req.query.fresh || '') === '1'
+    ok(res, await checkAppUpdate({ fresh }))
+  } catch (e) { fail(res, e) }
+})
+
+app.post('/api/app/update', async (_req, res) => {
+  try {
+    const r = await applyAppUpdate()
+    if (!r.ok) return res.status(400).json({ error: r.error || '更新失败' })
+    ok(res, r)
+    if (r.restarting) scheduleRestart()
+  } catch (e) { fail(res, e) }
 })
 
 // ---------- AI ----------
@@ -626,6 +643,9 @@ server.listen(PORT, HOST, () => {
   pushLog('服务', `已启动 http://${HOST}:${PORT}`)
   try { loadGlossary(); } catch (e) { console.error('[glossary]', e.message); }
   armAutoSync()
+  armAppUpdate((r) => {
+    pushLog('服务', r.message + (r.subject ? ' · ' + r.subject : '') + '。可在顶栏点更新')
+  })
   repairPublishedMetadata().catch((e) => {
     console.error('[publish] 补写知识库元数据失败:', e && e.message || e)
   })
