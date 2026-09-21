@@ -11,6 +11,11 @@ DATA_DIR="${DSH_HOME:-$HOME/.dsh}/meetings"
 PORT="${PORT:-3400}"
 URL="http://127.0.0.1:$PORT"
 
+# GitHub / 浏览器下的 zip 会带隔离属性，访达双击会被拦。
+if [ "$(uname -s)" = Darwin ]; then
+  xattr -dr com.apple.quarantine "$REPO_DIR" 2>/dev/null || true
+fi
+
 # 双击 .command 时不是登录壳，补上常见 Node 路径
 export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
 if [ -s "$HOME/.nvm/nvm.sh" ]; then

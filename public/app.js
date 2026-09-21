@@ -8988,6 +8988,10 @@
         setAskHits([]);
       }).finally(() => setAsking(false));
     };
+    const closeAsk = () => {
+      setAskA("");
+      setAskHits([]);
+    };
     const pulling = syncing || !!(st && st.syncing);
     if (err) {
       return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "pane", children: [
@@ -9029,10 +9033,12 @@
               onChange: (ev) => setAskQ(ev.target.value),
               onKeyDown: (ev) => {
                 if (ev.key === "Enter") doAsk();
+                if (ev.key === "Escape") closeAsk();
               }
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "quiet", onClick: doAsk, disabled: asking, children: asking ? "\u95EE\u2026" : "\u95EE" })
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "quiet", onClick: doAsk, disabled: asking, children: asking ? "\u95EE\u2026" : "\u95EE" }),
+          askA ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "quiet", onClick: closeAsk, children: "\u5173\u95ED" }) : null
         ] }),
         askA ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "ans", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Md, { text: askA, linkMap, onMeetingClick: (id) => id && setSelected(id) }) }) : null,
         /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "filters", children: [

@@ -23,6 +23,11 @@ if [ -s "$HOME/.nvm/nvm.sh" ]; then
   . "$HOME/.nvm/nvm.sh"
 fi
 
+# GitHub / 浏览器下的 zip 会带隔离属性，访达双击 .command 会被拦。先清掉。
+if [ "$(uname -s)" = Darwin ]; then
+  xattr -dr com.apple.quarantine "$REPO_DIR" 2>/dev/null || true
+fi
+
 info "仓库目录: $REPO_DIR"
 
 node_ok() {

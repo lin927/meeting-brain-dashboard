@@ -150,6 +150,7 @@ export function MeetPage(props) {
       else { setAskA(r && r.answer || ''); setAskHits((r && r.hits) || []) }
     }).catch((er) => { setAskA('错误: ' + String(er && er.message || er)); setAskHits([]) }).finally(() => setAsking(false))
   }
+  const closeAsk = () => { setAskA(''); setAskHits([]) }
 
   const pulling = syncing || !!(st && st.syncing)
   if (err) {
@@ -195,9 +196,13 @@ export function MeetPage(props) {
             placeholder="问这场会定了什么"
             value={askQ}
             onChange={(ev) => setAskQ(ev.target.value)}
-            onKeyDown={(ev) => { if (ev.key === 'Enter') doAsk() }}
+            onKeyDown={(ev) => {
+              if (ev.key === 'Enter') doAsk()
+              if (ev.key === 'Escape') closeAsk()
+            }}
           />
           <button className="quiet" onClick={doAsk} disabled={asking}>{asking ? '问…' : '问'}</button>
+          {askA ? <button className="quiet" onClick={closeAsk}>关闭</button> : null}
         </div>
         {askA ? <div className="ans"><Md text={askA} linkMap={linkMap} onMeetingClick={(id) => id && setSelected(id)} /></div> : null}
         <div className="filters">

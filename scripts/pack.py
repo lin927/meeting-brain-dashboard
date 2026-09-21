@@ -15,7 +15,7 @@ ZIP_NAME = "meeting-brain.zip"
 ALLOW_FILES = ("package.json", "package-lock.json", "README.md")
 ALLOW_DIRS = ("server", "lib", "public", "scripts")
 SKIP_DIR_NAMES = {"node_modules", ".git", "__pycache__", "dist"}
-SKIP_FILE_NAMES = {".DS_Store", "lib/client.js"}
+SKIP_FILE_NAMES = {".DS_Store", "lib/client.js", "scripts/start.command"}
 SKIP_SUFFIXES = {".log"}
 
 
