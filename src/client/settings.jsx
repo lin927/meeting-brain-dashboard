@@ -404,7 +404,7 @@ export function SettingsPage(props) {
               }}
             />
             <button className="quiet" disabled={importBusy} onClick={() => projectFileRef.current && projectFileRef.current.click()}>{importBusy ? '导入中…' : '导入清单'}</button>
-            <a className="quiet" href={'data:text/csv;charset=utf-8,' + encodeURIComponent('\uFEFF项目编号,项目名称\n')} download="项目清单模板.csv">下载模板</a>
+            <a className="quiet" href="/项目清单模板.csv" download="项目清单模板.csv">下载模板</a>
           </div>
         )
         : null}

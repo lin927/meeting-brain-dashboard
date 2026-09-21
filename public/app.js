@@ -10003,7 +10003,7 @@
           }
         ),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { className: "quiet", disabled: importBusy, onClick: () => projectFileRef.current && projectFileRef.current.click(), children: importBusy ? "\u5BFC\u5165\u4E2D\u2026" : "\u5BFC\u5165\u6E05\u5355" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("a", { className: "quiet", href: "data:text/csv;charset=utf-8," + encodeURIComponent("\uFEFF\u9879\u76EE\u7F16\u53F7,\u9879\u76EE\u540D\u79F0\n"), download: "\u9879\u76EE\u6E05\u5355\u6A21\u677F.csv", children: "\u4E0B\u8F7D\u6A21\u677F" })
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("a", { className: "quiet", href: "/\u9879\u76EE\u6E05\u5355\u6A21\u677F.csv", download: "\u9879\u76EE\u6E05\u5355\u6A21\u677F.csv", children: "\u4E0B\u8F7D\u6A21\u677F" })
       ] }) : null,
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "status", style: { marginTop: 28 }, children: "\u603B\u7ED3\u7528\u9ED8\u8BA4\u63D0\u70BC\u89C4\u5219\u3002" })
     ] });

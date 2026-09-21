@@ -2,4 +2,3 @@ node_modules/
 lib/client.js
 *.log
 .DS_Store
-public/项目清单模板.csv
