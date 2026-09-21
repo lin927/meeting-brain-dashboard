@@ -70,6 +70,20 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
 
 New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 
+$repoHead = ''
+try {
+    $repoHead = (& git -C $RepoDir rev-parse HEAD 2>$null | Out-String).Trim()
+} catch { $repoHead = '' }
+$runningRev = ''
+$revFile = Join-Path $DataDir 'server-rev'
+if (Test-Path $revFile) {
+    $runningRev = (Get-Content $revFile -Raw -ErrorAction SilentlyContinue).Trim()
+}
+if (-not $Restart -and (Test-Health $Port) -and $repoHead -and ($repoHead -ne $runningRev)) {
+    Info '代码已更新，正在重启本机服务…'
+    $Restart = $true
+}
+
 if ($Restart) { Stop-Port $Port $PidFile }
 
 if (-not (Test-Health $Port)) {

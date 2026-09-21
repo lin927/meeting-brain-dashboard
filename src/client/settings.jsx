@@ -81,6 +81,7 @@ export function SettingsPage(props) {
   const [glossaryQuery, setGlossaryQuery] = useState('')
   const appUp = props.appUp
   const [verBusy, setVerBusy] = useState(false)
+  const [verErr, setVerErr] = useState('')
   useEffect(() => {
     try { sessionStorage.setItem('ma-settings-tab', tab) } catch { /* ignore */ }
   }, [tab])
@@ -90,14 +91,20 @@ export function SettingsPage(props) {
   useEffect(() => {
     if (tab !== 'ver' || appUp || !props.onCheckUpdate) return undefined
     setVerBusy(true)
-    props.onCheckUpdate(false).catch(() => {}).finally(() => setVerBusy(false))
+    setVerErr('')
+    props.onCheckUpdate(false).catch((er) => setVerErr(String(er && er.message || er))).finally(() => setVerBusy(false))
   }, [tab])
   const checkVersion = (fresh) => {
     if (verBusy || !props.onCheckUpdate) return
     setVerBusy(true)
+    setVerErr('')
     props.onCheckUpdate(fresh).then((r) => {
       toast((r && r.message) || (fresh ? '已检查' : ''))
-    }).catch((er) => toast(String(er && er.message || er))).finally(() => setVerBusy(false))
+    }).catch((er) => {
+      const msg = String(er && er.message || er)
+      setVerErr(msg)
+      toast(msg)
+    }).finally(() => setVerBusy(false))
   }
   const apply = (r) => {
     setSt(r)
@@ -633,11 +640,14 @@ export function SettingsPage(props) {
         ? <div className="field"><span>最新说明</span><input type="text" readOnly value={appUp.subject} /></div>
         : null}
       <p className="status">{
-        verBusy
-          ? '正在检查…'
-          : ((appUp && appUp.message) || '还没检查过')
-            + (appUp && appUp.checkedAt ? (' · ' + fmtDateTime(appUp.checkedAt)) : '')
+        verErr
+          ? verErr
+          : (verBusy
+            ? '正在检查…'
+            : ((appUp && appUp.message) || '还没检查过')
+              + (appUp && appUp.checkedAt ? (' · ' + fmtDateTime(appUp.checkedAt)) : ''))
       }</p>
+      {verErr ? <p className="hint">拉完代码后必须重启本机服务，只刷新网页不够。Mac：仓库里执行 bash scripts/restart.sh。Windows：powershell -ExecutionPolicy Bypass -File scripts\restart.ps1。</p> : null}
       {appUp && appUp.dirty ? <p className="hint">本机代码有未提交改动，即使有新版本也不会自动覆盖。</p> : null}
       <button className="primary" disabled={verBusy || props.updBusy} onClick={() => checkVersion(true)}>{verBusy ? '检查中…' : '检查更新'}</button>
       {appUp && appUp.available

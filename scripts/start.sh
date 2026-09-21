@@ -77,6 +77,13 @@ fi
 
 mkdir -p "$DATA_DIR"
 
+HEAD="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null | tr -d '[:space:]' || true)"
+RUNNING="$(tr -d '[:space:]' < "$DATA_DIR/server-rev" 2>/dev/null || true)"
+if [ "$RESTART" != 1 ] && health && [ -n "$HEAD" ] && [ "$HEAD" != "$RUNNING" ]; then
+  info "代码已更新，正在重启本机服务…"
+  RESTART=1
+fi
+
 if [ "$RESTART" = 1 ]; then
   kill_port
 fi

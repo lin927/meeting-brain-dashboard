@@ -3,7 +3,7 @@
 # 会议助手 · 本机一键安装（macOS）
 #
 # 1. 检查/安装 Node.js 与钉钉 DWS CLI
-# 2. 安装依赖并构建独立界面
+# 2. 安装依赖（界面产物 public/app.js 已在仓库里，缺文件时才现场编译）
 # 3. 把「会议助手」放到桌面，启动 localhost:3400 并打开浏览器
 #
 # 不依赖 DSH。使用：bash scripts/install.sh
@@ -85,12 +85,14 @@ else
   warn "安装完成后重新运行本脚本，并执行: dws auth login"
 fi
 
-# ---------- 3. 安装依赖 + 构建 ----------
+# ---------- 3. 安装依赖（界面已提交 public/app.js，缺文件时才编译） ----------
 info "安装依赖…"
 cd "$REPO_DIR"
 npm install --no-audit --no-fund
-info "构建界面…"
-npm run build
+if [ ! -f "$REPO_DIR/public/app.js" ]; then
+  info "构建界面…"
+  npm run build
+fi
 
 # ---------- 4. 桌面快捷方式 ----------
 mkdir -p "$DATA_DIR"

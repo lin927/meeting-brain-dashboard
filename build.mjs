@@ -1,6 +1,7 @@
 /**
  * 构建独立 Web（public/app.js）与 DSH host 工具（lib/index.js）。
- * 驾驶舱不再作为 DSH tab 发布。
+ * 产物提交进仓库，同事 git pull 后不用再编译即可运行。
+ * 改 src/ 后请重新构建并一起提交。
  */
 import { build } from 'esbuild';
 import { mkdirSync } from 'node:fs';

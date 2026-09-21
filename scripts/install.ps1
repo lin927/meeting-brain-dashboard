@@ -2,7 +2,7 @@
 # 会议助手 · 本机一键安装（Windows）
 #
 # 1. 检查/安装 Node.js 与钉钉 DWS CLI
-# 2. 安装依赖并构建独立界面
+# 2. 安装依赖（界面产物 public/app.js 已在仓库里，缺文件时才现场编译）
 # 3. 把「会议助手」放到桌面，启动 localhost:3400 并打开浏览器
 #
 # 不依赖 DSH。PowerShell：
@@ -135,15 +135,18 @@ if (Get-Command dws -ErrorAction SilentlyContinue) {
     Warn '安装完成后重新运行本脚本，并执行: dws auth login'
 }
 
-# ---------- 3. 安装依赖 + 构建 ----------
+# ---------- 3. 安装依赖（界面已提交 public/app.js，缺文件时才编译） ----------
 Info '安装依赖…'
 Set-Location $RepoDir
 if ((Invoke-Npm install --no-audit --no-fund) -ne 0) {
     Die 'npm install 失败，请检查网络后重试。'
 }
-Info '构建界面…'
-if ((Invoke-Npm run build) -ne 0) {
-    Die 'npm run build 失败。'
+$appJs = Join-Path $RepoDir 'public\app.js'
+if (-not (Test-Path $appJs)) {
+    Info '构建界面…'
+    if ((Invoke-Npm run build) -ne 0) {
+        Die 'npm run build 失败。'
+    }
 }
 
 # ---------- 4. 桌面快捷方式 ----------

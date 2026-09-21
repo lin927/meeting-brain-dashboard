@@ -67,6 +67,13 @@ export async function api(path, body, method, opts) {
     ? { method: verb, signal: AbortSignal.timeout(timeoutMs) }
     : { method: verb, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs) })
   if (!res.ok) {
+    if (res.status === 404) {
+      const missing = String(path || '')
+      if (missing.indexOf('/api/app/update') === 0) {
+        throw new Error('本机服务还是旧版本，没有检查更新接口。请运行 scripts/restart.sh（Windows 用 restart.ps1）后刷新浏览器')
+      }
+      throw new Error('后端没有 ' + missing + '，请重启会议助手')
+    }
     const t = await res.text().catch(() => '')
     let msg = `后端错误 ${res.status}`
     try {

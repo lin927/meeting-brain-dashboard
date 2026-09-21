@@ -32,7 +32,7 @@ import { refreshMeeting } from '../lib/pull.js'
 import { updateDingTalkTitle, updateDingTalkSummary } from '../lib/minutes-write.js'
 import { syncStatus } from '../lib/sync-status.js'
 import { persistSyncResult, isSyncing, syncProgress, enqueueSync } from '../lib/sync-run.js'
-import { applyAppUpdate, armAppUpdate, checkAppUpdate, scheduleRestart } from '../lib/app-update.js'
+import { applyAppUpdate, armAppUpdate, checkAppUpdate, markRunningRevision, scheduleRestart } from '../lib/app-update.js'
 import { listLogs, pushLog } from '../lib/runtime-log.js'
 import {
   loadClassifyConfig, saveClassifyConfig, classifyPublicView, classifyExisting,
@@ -72,7 +72,7 @@ const fail = (res, e) => res.status(500).json({ error: String((e && e.message) |
 
 // ---------- 数据 ----------
 app.get('/api/health', (_req, res) => {
-  ok(res, { ok: true, name: 'meeting-brain', port: PORT })
+  ok(res, { ok: true, name: 'meeting-brain', port: PORT, updateApi: true })
 })
 
 app.get('/api/overview', async (_req, res) => {
@@ -641,6 +641,7 @@ const server = createServer(app)
 server.listen(PORT, HOST, () => {
   console.log(`✅ meeting-brain 已启动: http://${HOST}:${PORT}  （界面与 API 同源）`)
   pushLog('服务', `已启动 http://${HOST}:${PORT}`)
+  try { markRunningRevision() } catch { /* ignore */ }
   try { loadGlossary(); } catch (e) { console.error('[glossary]', e.message); }
   armAutoSync()
   armAppUpdate((r) => {

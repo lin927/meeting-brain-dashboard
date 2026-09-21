@@ -45,7 +45,7 @@ bash scripts/install.sh
 powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 ```
 
-脚本会：检查 Node / 钉钉 DWS → 安装依赖 → 构建界面 → 在桌面放「会议助手」快捷方式 → 启动服务并打开浏览器。
+脚本会：检查 Node / 钉钉 DWS → 安装依赖 → 在桌面放「会议助手」快捷方式 → 启动服务并打开浏览器。界面已编译进仓库（`public/app.js`），安装时不必再 `npm run build`；没有该文件时脚本才会现场编译。
 
 数据库无需准备：首次点「更新」时自动创建。
 
@@ -143,13 +143,15 @@ AI 深度总结按仓库里的提炼提示词生成，并用本地词表把「�
 - **点上传说知识库里已有**：同事已经传过同一场听记。确认覆盖才会换成你这份；取消则不动。
 - **改了标题或记录但钉钉没变**：到设置 → 听记看写回是否打开；导入场次没有对应听记；没有编辑权时本机仍保存、钉钉不动。
 - **首次同步较慢**：`dws` 全量扫描听记；之后增量很快。空库启动约 8 秒后会自动全量一次；也可到设置 → 听记点「全量同步」。列表「更新」只拉本机没有的，最多 300 场。全量和更新都在后台跑，网页可以继续点；设置页会显示已拉进度。个别场次逐字稿钉钉还没生成时会跳过，不影响其它场。
-- **更新本仓库代码后**：到设置 → **版本** 点「检查更新」；有新版本再点「更新」。顶栏在有新版本时也会出现「有更新」。也可 Mac 执行 `bash scripts/restart.sh`，Windows 执行 `powershell -ExecutionPolicy Bypass -File scripts\restart.ps1`。本机有未提交改动时不会自动覆盖。
+- **更新本仓库代码后**：`git pull` 会拿到已编译的界面，不必再 `npm run build`。然后请重启本机服务（不要只刷新网页）。双击桌面「会议助手」在代码变新时会自动重启；也可到设置 → **版本** 点「检查更新」，或 Mac 执行 `bash scripts/restart.sh`，Windows 执行 `powershell -ExecutionPolicy Bypass -File scripts\restart.ps1`。设置里的版本信息来自正在跑的后端；旧进程没有 `/api/app/update`。本机有未提交改动时不会自动覆盖。
 
 ## 开发
 
+仓库里带有编译后的 `public/app.js`（以及 DSH 用的 `lib/index.js`）。改 `src/` 后必须重新构建，并和源码一起提交，同事才能直接拉下来用。
+
 ```bash
 npm install
-npm run build        # 构建 public/app.js
+npm run build        # 改界面后：生成 public/app.js
 npm run server       # 仅启动后端（日常请用 scripts/start.sh）
 ```
 
