@@ -1,19 +1,18 @@
 {
   "people": [
     { "name": "郑勇", "aliases": ["勇哥"] },
-    { "name": "王进宝", "aliases": ["宝哥"] },
-    { "name": "戴元琼", "aliases": ["戴老师"] },
-    { "name": "赵伶俐", "aliases": ["赵老师"] },
-    { "name": "宋云", "aliases": ["宋总", "Jason"] },
-    { "name": "徐林", "aliases": ["徐总"] },
-    { "name": "杨春", "aliases": ["春哥"] },
-    { "name": "周立", "aliases": ["周总"] },
+    { "name": "王宝", "aliases": ["宝哥"] },
+    { "name": "戴元", "aliases": ["戴老师"] },
+    { "name": "赵伶", "aliases": ["赵老师"] },
+    { "name": "宝木", "aliases": ["宝木哥"] },
+    { "name": "徐木", "aliases": ["徐总"] },
+    { "name": "阳春", "aliases": ["春哥"] },
+    { "name": "周立群", "aliases": ["周总"] },
     { "name": "谢海", "aliases": ["海哥"] },
-    { "name": "喻勋海", "aliases": ["海哥"] },
     { "name": "宋团", "aliases": ["团长"] },
-    { "name": "龚萍", "aliases": ["萍哥"] },
-    { "name": "范清", "aliases": ["清姐"] },
-    { "name": "向燕均", "aliases": ["均均"] }
+    { "name": "龚萍", "aliases": ["萍姐"] },
+    { "name": "樊清", "aliases": ["清姐"] },
+    { "name": "向均", "aliases": ["均均"] }
   ],
   "projects": [],
   "terms": []
