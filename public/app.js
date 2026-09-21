@@ -7366,6 +7366,29 @@
     }
     return res.json();
   }
+  async function uploadAppZip(file) {
+    const base = await resolveApi();
+    if (base === null) throw new Error("\u65E0\u6CD5\u8FDE\u63A5\u672C\u5730\u4F1A\u8BAE\u540E\u7AEF\uFF083400-3404 \u5747\u65E0\u54CD\u5E94\uFF09\uFF0C\u8BF7\u786E\u8BA4\u540E\u7AEF\u5DF2\u542F\u52A8");
+    const buf = await file.arrayBuffer();
+    const res = await fetchGlobal()(base + "/api/app/update/zip", {
+      method: "POST",
+      headers: { "Content-Type": "application/zip" },
+      body: buf,
+      signal: AbortSignal.timeout(5 * 60 * 1e3)
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      let msg = `\u540E\u7AEF\u9519\u8BEF ${res.status}`;
+      try {
+        const j = JSON.parse(t);
+        if (j && j.error) msg = j.error;
+      } catch {
+        if (t) msg = t.slice(0, 200);
+      }
+      throw new Error(msg);
+    }
+    return res.json();
+  }
   function fallbackCopy(w, text) {
     try {
       const ta = w.document.createElement("textarea");
@@ -9626,6 +9649,7 @@
     const waitSync = (0, import_react5.useRef)(false);
     const syncStartedAt = (0, import_react5.useRef)(0);
     const projectFileRef = (0, import_react5.useRef)(null);
+    const zipFileRef = (0, import_react5.useRef)(null);
     const [importBusy, setImportBusy] = (0, import_react5.useState)(false);
     const [ht, setHt] = (0, import_react5.useState)({ url: "", apiKey: "" });
     const [htMsg, setHtMsg] = (0, import_react5.useState)("");
@@ -10241,15 +10265,15 @@
     ] });
     const verPane = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "page-inner", children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h1", { children: "\u7248\u672C" }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: "\u4ECE GitHub \u62C9\u672C\u4ED3\u5E93\u6700\u65B0\u4EE3\u7801\u5E76\u91CD\u542F\u672C\u673A\u670D\u52A1\u3002\u542C\u8BB0\u3001\u79F0\u547C\u548C\u5BC6\u94A5\u5728\u672C\u673A\uFF0C\u4E0D\u4F1A\u88AB\u8986\u76D6\u3002\u6709\u672A\u63D0\u4EA4\u6539\u52A8\u65F6\u4E0D\u4F1A\u81EA\u52A8\u62C9\u3002" }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: appUp && appUp.channel === "zip" ? "\u5B89\u88C5\u5305\u4F1A\u5B9A\u671F\u5411 GitHub \u67E5\u6700\u65B0\u7248\uFF0C\u6709\u66F4\u65B0\u65F6\u9876\u680F\u51FA\u73B0\u300C\u6709\u66F4\u65B0\u300D\u3002\u70B9\u66F4\u65B0\u4F1A\u4E0B\u8F7D\u5B89\u88C5\u5305\u5E76\u91CD\u542F\u3002\u542C\u8BB0\u5728\u672C\u673A\uFF0C\u4E0D\u4F1A\u88AB\u8986\u76D6\u3002\u82E5\u4ED3\u5E93\u662F\u79C1\u6709\u7684\u6216\u53EA\u53D1\u4E86\u9489\u76D8\uFF0C\u7528\u4E0B\u9762\u300C\u9009\u7528\u5B89\u88C5\u5305\u300D\u3002" : "\u5F00\u53D1\u8005\u53EF\u4ECE GitHub \u62C9\u6700\u65B0\u4EE3\u7801\u5E76\u91CD\u542F\u3002\u542C\u8BB0\u3001\u79F0\u547C\u548C\u5BC6\u94A5\u5728\u672C\u673A\uFF0C\u4E0D\u4F1A\u88AB\u8986\u76D6\u3002\u6709\u672A\u63D0\u4EA4\u6539\u52A8\u65F6\u4E0D\u4F1A\u81EA\u52A8\u62C9\u3002" }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "field", children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { children: "\u5F53\u524D\u7248\u672C" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("input", { type: "text", readOnly: true, value: appUp && appUp.current || (verBusy ? "\u68C0\u67E5\u4E2D\u2026" : "\u2014") })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "field", children: [
+      !(appUp && appUp.channel === "zip") ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "field", children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { children: "\u5206\u652F" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("input", { type: "text", readOnly: true, value: appUp && appUp.branch || "\u2014" })
-      ] }),
+      ] }) : null,
       appUp && appUp.available && appUp.latest ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "field", children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { children: "\u8FDC\u7A0B\u7248\u672C" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("input", { type: "text", readOnly: true, value: appUp.latest })
@@ -10270,7 +10294,30 @@
           onClick: () => props.onRequestApply && props.onRequestApply(),
           children: props.updBusy ? "\u66F4\u65B0\u4E2D\u2026" : "\u66F4\u65B0"
         }
-      ) : null
+      ) : null,
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+        "input",
+        {
+          ref: zipFileRef,
+          type: "file",
+          accept: ".zip,application/zip",
+          hidden: true,
+          onChange: (e3) => {
+            const f = e3.target.files && e3.target.files[0];
+            e3.target.value = "";
+            if (f && props.onApplyZip) props.onApplyZip(f);
+          }
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+        "button",
+        {
+          className: "quiet",
+          disabled: props.updBusy,
+          onClick: () => zipFileRef.current && zipFileRef.current.click(),
+          children: props.updBusy ? "\u66F4\u65B0\u4E2D\u2026" : "\u9009\u7528\u5B89\u88C5\u5305"
+        }
+      )
     ] });
     const logsPane = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "page-inner log-pane", children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h1", { children: "\u8FD0\u884C\u65E5\u5FD7" }),
@@ -10407,6 +10454,17 @@
         showToast(String(er && er.message || er));
       });
     };
+    const applyZipFile = (file) => {
+      if (updBusy || !file) return;
+      setUpdBusy(true);
+      uploadAppZip(file).then((r) => {
+        showToast(r && r.message || "\u6B63\u5728\u91CD\u542F\u2026");
+        waitRestart();
+      }).catch((er) => {
+        setUpdBusy(false);
+        showToast(String(er && er.message || er));
+      });
+    };
     return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "app", children: [
       /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("header", { className: "top", children: [
         /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "brand", children: [
@@ -10450,7 +10508,8 @@
             appUp,
             updBusy,
             onCheckUpdate: checkAppUp,
-            onRequestApply: () => setUpdOpen(true)
+            onRequestApply: () => setUpdOpen(true),
+            onApplyZip: applyZipFile
           }
         ) })
       ] }),
@@ -10459,7 +10518,7 @@
         ConfirmSheet,
         {
           title: "\u66F4\u65B0\u4F1A\u8BAE\u52A9\u624B",
-          lede: updBusy ? "\u6B63\u5728\u62C9\u4EE3\u7801\u5E76\u91CD\u542F\u672C\u673A\u670D\u52A1\u3002\u542C\u8BB0\u6570\u636E\u5728\u672C\u673A\uFF0C\u4E0D\u4F1A\u88AB\u8986\u76D6\u3002\u8BF7\u7B49\u9875\u9762\u81EA\u52A8\u5237\u65B0\uFF0C\u5148\u4E0D\u8981\u5173\u6389\u3002" : (appUp && appUp.subject ? "\u6700\u65B0\uFF1A" + appUp.subject + "\u3002" : "") + (appUp && appUp.canApply ? "\u4F1A\u4ECE GitHub \u62C9\u6700\u65B0\u4EE3\u7801\u5E76\u91CD\u542F\u3002\u542C\u8BB0\u3001\u79F0\u547C\u548C\u5BC6\u94A5\u90FD\u5728\u672C\u673A\uFF0C\u4E0D\u4F1A\u88AB\u8986\u76D6\u3002" : appUp && appUp.message || "\u73B0\u5728\u4E0D\u80FD\u81EA\u52A8\u66F4\u65B0"),
+          lede: updBusy ? appUp && appUp.channel === "zip" ? "\u6B63\u5728\u4E0B\u8F7D\u5B89\u88C5\u5305\u5E76\u91CD\u542F\u672C\u673A\u670D\u52A1\u3002\u542C\u8BB0\u6570\u636E\u5728\u672C\u673A\uFF0C\u4E0D\u4F1A\u88AB\u8986\u76D6\u3002\u8BF7\u7B49\u9875\u9762\u81EA\u52A8\u5237\u65B0\uFF0C\u5148\u4E0D\u8981\u5173\u6389\u3002" : "\u6B63\u5728\u62C9\u4EE3\u7801\u5E76\u91CD\u542F\u672C\u673A\u670D\u52A1\u3002\u542C\u8BB0\u6570\u636E\u5728\u672C\u673A\uFF0C\u4E0D\u4F1A\u88AB\u8986\u76D6\u3002\u8BF7\u7B49\u9875\u9762\u81EA\u52A8\u5237\u65B0\uFF0C\u5148\u4E0D\u8981\u5173\u6389\u3002" : (appUp && appUp.subject ? "\u6700\u65B0\uFF1A" + appUp.subject + "\u3002" : "") + (appUp && appUp.canApply ? appUp.channel === "zip" ? "\u4F1A\u4E0B\u8F7D\u6700\u65B0\u5B89\u88C5\u5305\u5E76\u91CD\u542F\u3002\u542C\u8BB0\u3001\u79F0\u547C\u548C\u5BC6\u94A5\u90FD\u5728\u672C\u673A\uFF0C\u4E0D\u4F1A\u88AB\u8986\u76D6\u3002" : "\u4F1A\u4ECE GitHub \u62C9\u6700\u65B0\u4EE3\u7801\u5E76\u91CD\u542F\u3002\u542C\u8BB0\u3001\u79F0\u547C\u548C\u5BC6\u94A5\u90FD\u5728\u672C\u673A\uFF0C\u4E0D\u4F1A\u88AB\u8986\u76D6\u3002" : appUp && appUp.message || "\u73B0\u5728\u4E0D\u80FD\u81EA\u52A8\u66F4\u65B0"),
           confirmLabel: "\u66F4\u65B0",
           busyLabel: "\u66F4\u65B0\u4E2D\u2026",
           busy: updBusy,

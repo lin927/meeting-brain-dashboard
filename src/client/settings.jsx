@@ -75,6 +75,7 @@ export function SettingsPage(props) {
   const waitSync = useRef(false)
   const syncStartedAt = useRef(0)
   const projectFileRef = useRef(null)
+  const zipFileRef = useRef(null)
   const [importBusy, setImportBusy] = useState(false)
   const [ht, setHt] = useState({ url: '', apiKey: '' })
   const [htMsg, setHtMsg] = useState('')
@@ -630,9 +631,15 @@ export function SettingsPage(props) {
   const verPane = (
     <div className="page-inner">
       <h1>版本</h1>
-      <p className="lede">从 GitHub 拉本仓库最新代码并重启本机服务。听记、称呼和密钥在本机，不会被覆盖。有未提交改动时不会自动拉。</p>
+      <p className="lede">{
+        appUp && appUp.channel === 'zip'
+          ? '安装包会定期向 GitHub 查最新版，有更新时顶栏出现「有更新」。点更新会下载安装包并重启。听记在本机，不会被覆盖。若仓库是私有的或只发了钉盘，用下面「选用安装包」。'
+          : '开发者可从 GitHub 拉最新代码并重启。听记、称呼和密钥在本机，不会被覆盖。有未提交改动时不会自动拉。'
+      }</p>
       <div className="field"><span>当前版本</span><input type="text" readOnly value={(appUp && appUp.current) || (verBusy ? '检查中…' : '—')} /></div>
-      <div className="field"><span>分支</span><input type="text" readOnly value={(appUp && appUp.branch) || '—'} /></div>
+      {!(appUp && appUp.channel === 'zip')
+        ? <div className="field"><span>分支</span><input type="text" readOnly value={(appUp && appUp.branch) || '—'} /></div>
+        : null}
       {appUp && appUp.available && appUp.latest
         ? <div className="field"><span>远程版本</span><input type="text" readOnly value={appUp.latest} /></div>
         : null}
@@ -659,6 +666,22 @@ export function SettingsPage(props) {
           >{props.updBusy ? '更新中…' : '更新'}</button>
         )
         : null}
+      <input
+        ref={zipFileRef}
+        type="file"
+        accept=".zip,application/zip"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files && e.target.files[0]
+          e.target.value = ''
+          if (f && props.onApplyZip) props.onApplyZip(f)
+        }}
+      />
+      <button
+        className="quiet"
+        disabled={props.updBusy}
+        onClick={() => zipFileRef.current && zipFileRef.current.click()}
+      >{props.updBusy ? '更新中…' : '选用安装包'}</button>
     </div>
   )
   const logsPane = (

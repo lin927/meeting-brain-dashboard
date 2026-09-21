@@ -33,6 +33,7 @@ import { updateDingTalkTitle, updateDingTalkSummary } from '../lib/minutes-write
 import { syncStatus } from '../lib/sync-status.js'
 import { persistSyncResult, isSyncing, syncProgress, enqueueSync } from '../lib/sync-run.js'
 import { applyAppUpdate, armAppUpdate, checkAppUpdate, markRunningRevision, scheduleRestart } from '../lib/app-update.js'
+import { applyZipBuffer } from '../lib/app-zip.js'
 import { listLogs, pushLog } from '../lib/runtime-log.js'
 import {
   loadClassifyConfig, saveClassifyConfig, classifyPublicView, classifyExisting,
@@ -206,6 +207,15 @@ app.get('/api/app/update', async (req, res) => {
 app.post('/api/app/update', async (_req, res) => {
   try {
     const r = await applyAppUpdate()
+    if (!r.ok) return res.status(400).json({ error: r.error || '更新失败' })
+    ok(res, r)
+    if (r.restarting) scheduleRestart()
+  } catch (e) { fail(res, e) }
+})
+
+app.post('/api/app/update/zip', express.raw({ type: ['application/zip', 'application/octet-stream'], limit: '80mb' }), async (req, res) => {
+  try {
+    const r = await applyZipBuffer(Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || []))
     if (!r.ok) return res.status(400).json({ error: r.error || '更新失败' })
     ok(res, r)
     if (r.restarting) scheduleRestart()

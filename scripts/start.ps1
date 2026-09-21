@@ -71,9 +71,20 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
 New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 
 $repoHead = ''
-try {
-    $repoHead = (& git -C $RepoDir rev-parse HEAD 2>$null | Out-String).Trim()
-} catch { $repoHead = '' }
+$relFile = Join-Path $RepoDir 'release.json'
+if (Test-Path (Join-Path $RepoDir '.git')) {
+    try {
+        $repoHead = (& git -C $RepoDir rev-parse HEAD 2>$null | Out-String).Trim()
+    } catch { $repoHead = '' }
+} elseif (Test-Path $relFile) {
+    try {
+        $rel = Get-Content $relFile -Raw | ConvertFrom-Json
+        $bits = @()
+        if ($rel.git) { $bits += $rel.git }
+        if ($rel.version) { $bits += $rel.version }
+        $repoHead = ($bits -join '@')
+    } catch { $repoHead = '' }
+}
 $runningRev = ''
 $revFile = Join-Path $DataDir 'server-rev'
 if (Test-Path $revFile) {
@@ -124,5 +135,5 @@ if (-not (Test-Health $Port)) {
 if (-not $NoOpen) {
     Info '打开浏览器…'
     Start-Process $Url
-    Info '已打开。关掉本窗口不影响使用；停止服务请运行 scripts\stop.ps1'
+    Info '已打开。关掉本窗口不影响使用；停止服务请双击 scripts\stop.bat'
 }

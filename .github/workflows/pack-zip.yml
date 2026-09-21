@@ -1,0 +1,30 @@
+name: pack-zip
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pack runtime zip
+        run: python3 scripts/pack.py
+      - name: Publish latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA="$(git rev-parse --short HEAD)"
+          TAG="mb-${SHA}"
+          gh release delete "$TAG" --yes --cleanup-tag || true
+          gh release create "$TAG" dist/meeting-brain.zip dist/release.json \
+            --title "会议助手 ${SHA}" \
+            --notes "解压 meeting-brain.zip 后运行 scripts/install.sh（Mac）或 scripts/install.ps1（Windows）。听记在本机 ~/.dsh，更新不会覆盖。" \
+            --latest

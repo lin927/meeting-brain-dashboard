@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { api } from './api.js'
+import { api, uploadAppZip } from './api.js'
 import { NAV } from './format.js'
 import { MeetPage } from './meet.jsx'
 import { LedgerPage } from './ledger.jsx'
@@ -87,6 +87,17 @@ export function App() {
       showToast(String(er && er.message || er))
     })
   }
+  const applyZipFile = (file) => {
+    if (updBusy || !file) return
+    setUpdBusy(true)
+    uploadAppZip(file).then((r) => {
+      showToast((r && r.message) || '正在重启…')
+      waitRestart()
+    }).catch((er) => {
+      setUpdBusy(false)
+      showToast(String(er && er.message || er))
+    })
+  }
   return (
     <div className="app">
       <header className="top">
@@ -132,6 +143,7 @@ export function App() {
             updBusy={updBusy}
             onCheckUpdate={checkAppUp}
             onRequestApply={() => setUpdOpen(true)}
+            onApplyZip={applyZipFile}
           />
         </div>
       </main>
@@ -142,9 +154,13 @@ export function App() {
             title="更新会议助手"
             lede={
               updBusy
-                ? '正在拉代码并重启本机服务。听记数据在本机，不会被覆盖。请等页面自动刷新，先不要关掉。'
+                ? (appUp && appUp.channel === 'zip'
+                  ? '正在下载安装包并重启本机服务。听记数据在本机，不会被覆盖。请等页面自动刷新，先不要关掉。'
+                  : '正在拉代码并重启本机服务。听记数据在本机，不会被覆盖。请等页面自动刷新，先不要关掉。')
                 : ((appUp && appUp.subject ? ('最新：' + appUp.subject + '。') : '') + (appUp && appUp.canApply
-                  ? '会从 GitHub 拉最新代码并重启。听记、称呼和密钥都在本机，不会被覆盖。'
+                  ? (appUp.channel === 'zip'
+                    ? '会下载最新安装包并重启。听记、称呼和密钥都在本机，不会被覆盖。'
+                    : '会从 GitHub 拉最新代码并重启。听记、称呼和密钥都在本机，不会被覆盖。')
                   : ((appUp && appUp.message) || '现在不能自动更新')))
             }
             confirmLabel="更新"

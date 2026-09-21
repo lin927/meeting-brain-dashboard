@@ -77,7 +77,12 @@ fi
 
 mkdir -p "$DATA_DIR"
 
-HEAD="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null | tr -d '[:space:]' || true)"
+HEAD=""
+if [ -d "$REPO_DIR/.git" ]; then
+  HEAD="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null | tr -d '[:space:]' || true)"
+elif [ -f "$REPO_DIR/release.json" ]; then
+  HEAD="$(node -e "const d=require(process.argv[1]); process.stdout.write([d.git,d.version].filter(Boolean).join('@'))" "$REPO_DIR/release.json" 2>/dev/null || true)"
+fi
 RUNNING="$(tr -d '[:space:]' < "$DATA_DIR/server-rev" 2>/dev/null || true)"
 if [ "$RESTART" != 1 ] && health && [ -n "$HEAD" ] && [ "$HEAD" != "$RUNNING" ]; then
   info "代码已更新，正在重启本机服务…"

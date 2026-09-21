@@ -70,10 +70,34 @@ export async function api(path, body, method, opts) {
     if (res.status === 404) {
       const missing = String(path || '')
       if (missing.indexOf('/api/app/update') === 0) {
-        throw new Error('本机服务还是旧版本，没有检查更新接口。请运行 scripts/restart.sh（Windows 用 restart.ps1）后刷新浏览器')
+        throw new Error('本机服务还是旧版本，没有检查更新接口。请运行 scripts/restart.sh（Windows 请双击 scripts\\restart.bat）后刷新浏览器')
       }
       throw new Error('后端没有 ' + missing + '，请重启会议助手')
     }
+    const t = await res.text().catch(() => '')
+    let msg = `后端错误 ${res.status}`
+    try {
+      const j = JSON.parse(t)
+      if (j && j.error) msg = j.error
+    } catch {
+      if (t) msg = t.slice(0, 200)
+    }
+    throw new Error(msg)
+  }
+  return res.json()
+}
+
+export async function uploadAppZip(file) {
+  const base = await resolveApi()
+  if (base === null) throw new Error('无法连接本地会议后端（3400-3404 均无响应），请确认后端已启动')
+  const buf = await file.arrayBuffer()
+  const res = await fetchGlobal()(base + '/api/app/update/zip', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/zip' },
+    body: buf,
+    signal: AbortSignal.timeout(5 * 60 * 1000),
+  })
+  if (!res.ok) {
     const t = await res.text().catch(() => '')
     let msg = `后端错误 ${res.status}`
     try {

@@ -180,7 +180,7 @@ Info '安装完成。浏览器应已打开 http://127.0.0.1:3400'
 Info '  · 以后使用：双击桌面上的「会议助手」'
 Info '  · 设置页填写大模型 API Key（问答/总结用）'
 Info '  · 点「更新」拉取钉钉听记（需已完成 dws 登录）'
-Info '  · 停止服务：powershell -ExecutionPolicy Bypass -File scripts\stop.ps1'
+Info '  · 停止服务：双击 scripts\stop.bat'
 Info '  · 不要用 node server/index.js 当日常启动（请用桌面快捷方式或 start.ps1）'
 Info '======================================================'
 Wait-Enter

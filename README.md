@@ -27,11 +27,11 @@
 4. **大模型 API Key**：装好后在设置页填写（问答/总结用）。
 5. **要上传时**：再在设置 → 上传 填 RAGFlow 地址、密钥，以及四个 dataset id。
 
-不需要安装 DSH。
+不需要安装 DSH，也不需要 git。
 
-## 安装（一次）
+## 安装（同事，推荐）
 
-把仓库放到本机后，在项目目录执行：
+向维护者要 `meeting-brain.zip`（钉盘、网盘或 GitHub Releases 均可），解压到本机任意目录（不要放在需要管理员权限的位置）。
 
 **Mac**
 
@@ -45,7 +45,15 @@ bash scripts/install.sh
 powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 ```
 
-脚本会：检查 Node / 钉钉 DWS → 安装依赖 → 在桌面放「会议助手」快捷方式 → 启动服务并打开浏览器。界面已编译进仓库（`public/app.js`），安装时不必再 `npm run build`；没有该文件时脚本才会现场编译。
+脚本会：检查 Node / 钉钉 DWS → 安装依赖 → 在桌面放「会议助手」快捷方式 → 启动服务并打开浏览器。zip 里已带编译好的界面，不必 `npm run build`。
+
+以后更新：打开会议助手，顶栏出现「有更新」时点进去即可（会从 GitHub 下最新 zip）。若仓库是私有的或只发了钉盘，到设置 → **版本** 点「选用安装包」。听记数据在 `~/.dsh`，不会被覆盖。
+
+维护者打包装：Mac `bash scripts/pack.sh`，Windows `powershell -ExecutionPolicy Bypass -File scripts\pack.ps1`，产物在 `dist/meeting-brain.zip`。
+
+## 开发者（git）
+
+改代码仍用 git。把仓库放到本机后执行上面的 `install.sh` / `install.ps1`。界面源码在 `src/`，改完后 `npm run build` 再提交 `public/app.js`。
 
 数据库无需准备：首次点「更新」时自动创建。
 
@@ -144,11 +152,11 @@ AI 深度总结按仓库里的提炼提示词生成，并用本地词表把「�
 - **点上传说知识库里已有**：同事已经传过同一场听记。确认覆盖才会换成你这份；取消则不动。
 - **改了标题或记录但钉钉没变**：到设置 → 听记看写回是否打开；导入场次没有对应听记；没有编辑权时本机仍保存、钉钉不动。
 - **首次同步较慢**：`dws` 全量扫描听记；之后增量很快。空库启动约 8 秒后会自动全量一次；也可到设置 → 听记点「全量同步」。列表「更新」只拉本机没有的，最多 300 场。全量和更新都在后台跑，网页可以继续点；设置页会显示已拉进度。个别场次逐字稿钉钉还没生成时会跳过，不影响其它场。
-- **更新本仓库代码后**：`git pull` 会拿到已编译的界面，不必再 `npm run build`。然后请重启本机服务（不要只刷新网页）。双击桌面「会议助手」在代码变新时会自动重启；也可到设置 → **版本** 点「检查更新」。Mac 执行 `bash scripts/restart.sh`；Windows 请双击 `scripts\restart.bat`（不要直接双击 `.ps1`，窗口会一闪而过）。设置里的版本信息来自正在跑的后端；旧进程没有 `/api/app/update`。本机有未提交改动时不会自动覆盖。
+- **更新**：zip 安装会定期查 GitHub 最新安装包，顶栏「有更新」可一键下载。私有仓库或钉盘分发时，设置 → **版本** →「选用安装包」。开发者仍可 `git pull` 后重启。听记在本机，不会被覆盖。Windows 不要直接双击 `.ps1`，请双击 `scripts\restart.bat`。
 
 ## 开发
 
-仓库里带有编译后的 `public/app.js`（以及 DSH 用的 `lib/index.js`）。改 `src/` 后必须重新构建，并和源码一起提交，同事才能直接拉下来用。
+仓库里带有编译后的 `public/app.js`（以及 DSH 用的 `lib/index.js`）。改 `src/` 后必须重新构建，并和源码一起提交。发给同事前再打 zip：`bash scripts/pack.sh`。
 
 ```bash
 npm install
