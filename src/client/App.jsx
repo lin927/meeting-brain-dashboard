@@ -31,23 +31,23 @@ export function App() {
   useEffect(() => {
     try { sessionStorage.setItem(STORE, JSON.stringify({ page, selectedMeet, selectedTodo })) } catch { /* ignore */ }
   }, [page, selectedMeet, selectedTodo])
+  const checkAppUp = React.useCallback((fresh) => {
+    return api('/api/app/update' + (fresh ? '?fresh=1' : ''), undefined, 'GET', { timeoutMs: 30000 }).then((r) => {
+      setAppUp(r)
+      return r
+    })
+  }, [])
   useEffect(() => {
-    let stop = false
-    const load = (fresh) => {
-      api('/api/app/update' + (fresh ? '?fresh=1' : ''), undefined, 'GET', { timeoutMs: 30000 }).then((r) => {
-        if (!stop) setAppUp(r)
-      }).catch(() => {})
-    }
+    const load = (fresh) => { checkAppUp(fresh).catch(() => {}) }
     load(false)
     const t = setInterval(() => load(true), 30 * 60 * 1000)
     const onVis = () => { if (document.visibilityState === 'visible') load(false) }
     document.addEventListener('visibilitychange', onVis)
     return () => {
-      stop = true
       clearInterval(t)
       document.removeEventListener('visibilitychange', onVis)
     }
-  }, [])
+  }, [checkAppUp])
   const showToast = React.useCallback((t) => {
     setToast(t)
     setTimeout(() => setToast(''), String(t || '').length > 12 ? 3200 : 1600)
@@ -126,7 +126,13 @@ export function App() {
           />
         </div>
         <div className={'view' + (page === 'settings' ? '' : ' view-off')}>
-          <SettingsPage toast={showToast} />
+          <SettingsPage
+            toast={showToast}
+            appUp={appUp}
+            updBusy={updBusy}
+            onCheckUpdate={checkAppUp}
+            onRequestApply={() => setUpdOpen(true)}
+          />
         </div>
       </main>
       {toast ? <div className="toast">{toast}</div> : null}

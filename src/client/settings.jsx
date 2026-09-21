@@ -79,12 +79,26 @@ export function SettingsPage(props) {
   const [ht, setHt] = useState({ url: '', apiKey: '' })
   const [htMsg, setHtMsg] = useState('')
   const [glossaryQuery, setGlossaryQuery] = useState('')
+  const appUp = props.appUp
+  const [verBusy, setVerBusy] = useState(false)
   useEffect(() => {
     try { sessionStorage.setItem('ma-settings-tab', tab) } catch { /* ignore */ }
   }, [tab])
   useEffect(() => {
     try { sessionStorage.setItem('ma-glossary-kind', glossaryKind) } catch { /* ignore */ }
   }, [glossaryKind])
+  useEffect(() => {
+    if (tab !== 'ver' || appUp || !props.onCheckUpdate) return undefined
+    setVerBusy(true)
+    props.onCheckUpdate(false).catch(() => {}).finally(() => setVerBusy(false))
+  }, [tab])
+  const checkVersion = (fresh) => {
+    if (verBusy || !props.onCheckUpdate) return
+    setVerBusy(true)
+    props.onCheckUpdate(fresh).then((r) => {
+      toast((r && r.message) || (fresh ? '已检查' : ''))
+    }).catch((er) => toast(String(er && er.message || er))).finally(() => setVerBusy(false))
+  }
   const apply = (r) => {
     setSt(r)
     setPeople(r.people || [])
@@ -606,6 +620,37 @@ export function SettingsPage(props) {
       </div>
     </div>
   )
+  const verPane = (
+    <div className="page-inner">
+      <h1>版本</h1>
+      <p className="lede">从 GitHub 拉本仓库最新代码并重启本机服务。听记、称呼和密钥在本机，不会被覆盖。有未提交改动时不会自动拉。</p>
+      <div className="field"><span>当前版本</span><input type="text" readOnly value={(appUp && appUp.current) || (verBusy ? '检查中…' : '—')} /></div>
+      <div className="field"><span>分支</span><input type="text" readOnly value={(appUp && appUp.branch) || '—'} /></div>
+      {appUp && appUp.available && appUp.latest
+        ? <div className="field"><span>远程版本</span><input type="text" readOnly value={appUp.latest} /></div>
+        : null}
+      {appUp && appUp.subject
+        ? <div className="field"><span>最新说明</span><input type="text" readOnly value={appUp.subject} /></div>
+        : null}
+      <p className="status">{
+        verBusy
+          ? '正在检查…'
+          : ((appUp && appUp.message) || '还没检查过')
+            + (appUp && appUp.checkedAt ? (' · ' + fmtDateTime(appUp.checkedAt)) : '')
+      }</p>
+      {appUp && appUp.dirty ? <p className="hint">本机代码有未提交改动，即使有新版本也不会自动覆盖。</p> : null}
+      <button className="primary" disabled={verBusy || props.updBusy} onClick={() => checkVersion(true)}>{verBusy ? '检查中…' : '检查更新'}</button>
+      {appUp && appUp.available
+        ? (
+          <button
+            className="quiet"
+            disabled={props.updBusy || !appUp.canApply}
+            onClick={() => props.onRequestApply && props.onRequestApply()}
+          >{props.updBusy ? '更新中…' : '更新'}</button>
+        )
+        : null}
+    </div>
+  )
   const logsPane = (
     <div className="page-inner log-pane">
       <h1>运行日志</h1>
@@ -625,7 +670,7 @@ export function SettingsPage(props) {
         : <p className="empty">还没有日志。</p>}
     </div>
   )
-  const panes = { people: peoplePane, classify: classifyPane, llm: llmPane, kb: kbPane, ext: extPane, mcp: mcpPane, sync: syncPane, logs: logsPane }
+  const panes = { people: peoplePane, classify: classifyPane, llm: llmPane, kb: kbPane, ext: extPane, mcp: mcpPane, sync: syncPane, ver: verPane, logs: logsPane }
   const glossaryCount = people.length + projects.length + terms.length
   const llmStatus = (st.llm && st.llm.model) || (st.llm && st.llm.keySet ? '已配' : '未配置')
   const kbStatus = (st.kb && st.kb.filled) ? (st.kb.filled + '/4') : '未填'
@@ -637,7 +682,7 @@ export function SettingsPage(props) {
     <div className="settings">
       <aside className="cats">
         <h2>设置</h2>
-        {[['people', '称呼', String(glossaryCount)], ['classify', '类型', classifyStatus], ['llm', '模型', llmStatus], ['kb', '上传', kbStatus], ['ext', '外部系统', htStatus], ['mcp', 'MCP', mcpStatus], ['sync', '听记', syncStatusLabel], ['logs', '日志', String(logs.length || '')]].map(([id, label, n]) => (
+        {[['people', '称呼', String(glossaryCount)], ['classify', '类型', classifyStatus], ['llm', '模型', llmStatus], ['kb', '上传', kbStatus], ['ext', '外部系统', htStatus], ['mcp', 'MCP', mcpStatus], ['sync', '听记', syncStatusLabel], ['ver', '版本', (appUp && appUp.available) ? '有更新' : ((appUp && appUp.current) || '—')], ['logs', '日志', String(logs.length || '')]].map(([id, label, n]) => (
           <div className={'cat' + (tab === id ? ' on' : '')} key={id} onClick={() => { setTab(id); setTestMsg(''); setHtMsg('') }}>
             {label + ' '}<span className="n">{n}</span>
           </div>
