@@ -7350,7 +7350,7 @@
       if (res.status === 404) {
         const missing = String(path || "");
         if (missing.indexOf("/api/app/update") === 0) {
-          throw new Error("\u672C\u673A\u670D\u52A1\u8FD8\u662F\u65E7\u7248\u672C\uFF0C\u6CA1\u6709\u68C0\u67E5\u66F4\u65B0\u63A5\u53E3\u3002\u8BF7\u8FD0\u884C scripts/restart.sh\uFF08Windows \u7528 restart.ps1\uFF09\u540E\u5237\u65B0\u6D4F\u89C8\u5668");
+          throw new Error("\u672C\u673A\u670D\u52A1\u8FD8\u662F\u65E7\u7248\u672C\uFF0C\u6CA1\u6709\u68C0\u67E5\u66F4\u65B0\u63A5\u53E3\u3002\u8BF7\u8FD0\u884C scripts/restart.sh\uFF08Windows \u8BF7\u53CC\u51FB scripts\\restart.bat\uFF09\u540E\u5237\u65B0\u6D4F\u89C8\u5668");
         }
         throw new Error("\u540E\u7AEF\u6CA1\u6709 " + missing + "\uFF0C\u8BF7\u91CD\u542F\u4F1A\u8BAE\u52A9\u624B");
       }
@@ -10003,7 +10003,7 @@
           }
         ),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { className: "quiet", disabled: importBusy, onClick: () => projectFileRef.current && projectFileRef.current.click(), children: importBusy ? "\u5BFC\u5165\u4E2D\u2026" : "\u5BFC\u5165\u6E05\u5355" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("a", { className: "quiet", href: "/\u9879\u76EE\u6E05\u5355\u6A21\u677F.csv", download: "\u9879\u76EE\u6E05\u5355\u6A21\u677F.csv", children: "\u4E0B\u8F7D\u6A21\u677F" })
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("a", { className: "quiet", href: "data:text/csv;charset=utf-8," + encodeURIComponent("\uFEFF\u9879\u76EE\u7F16\u53F7,\u9879\u76EE\u540D\u79F0\n"), download: "\u9879\u76EE\u6E05\u5355\u6A21\u677F.csv", children: "\u4E0B\u8F7D\u6A21\u677F" })
       ] }) : null,
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "status", style: { marginTop: 28 }, children: "\u603B\u7ED3\u7528\u9ED8\u8BA4\u63D0\u70BC\u89C4\u5219\u3002" })
     ] });
@@ -10259,7 +10259,7 @@
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("input", { type: "text", readOnly: true, value: appUp.subject })
       ] }) : null,
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "status", children: verErr ? verErr : verBusy ? "\u6B63\u5728\u68C0\u67E5\u2026" : (appUp && appUp.message || "\u8FD8\u6CA1\u68C0\u67E5\u8FC7") + (appUp && appUp.checkedAt ? " \xB7 " + fmtDateTime(appUp.checkedAt) : "") }),
-      verErr ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "hint", children: "\u62C9\u5B8C\u4EE3\u7801\u540E\u5FC5\u987B\u91CD\u542F\u672C\u673A\u670D\u52A1\uFF0C\u53EA\u5237\u65B0\u7F51\u9875\u4E0D\u591F\u3002Mac\uFF1A\u4ED3\u5E93\u91CC\u6267\u884C bash scripts/restart.sh\u3002Windows\uFF1Apowershell -ExecutionPolicy Bypass -File scripts\\restart.ps1\u3002" }) : null,
+      verErr ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "hint", children: "\u62C9\u5B8C\u4EE3\u7801\u540E\u5FC5\u987B\u91CD\u542F\u672C\u673A\u670D\u52A1\uFF0C\u53EA\u5237\u65B0\u7F51\u9875\u4E0D\u591F\u3002Mac\uFF1A\u4ED3\u5E93\u91CC\u6267\u884C bash scripts/restart.sh\u3002Windows\uFF1A\u53CC\u51FB scripts\\restart.bat\uFF08\u4E0D\u8981\u76F4\u63A5\u53CC\u51FB .ps1\uFF09\u3002" }) : null,
       appUp && appUp.dirty ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "hint", children: "\u672C\u673A\u4EE3\u7801\u6709\u672A\u63D0\u4EA4\u6539\u52A8\uFF0C\u5373\u4F7F\u6709\u65B0\u7248\u672C\u4E5F\u4E0D\u4F1A\u81EA\u52A8\u8986\u76D6\u3002" }) : null,
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { className: "primary", disabled: verBusy || props.updBusy, onClick: () => checkVersion(true), children: verBusy ? "\u68C0\u67E5\u4E2D\u2026" : "\u68C0\u67E5\u66F4\u65B0" }),
       appUp && appUp.available ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(

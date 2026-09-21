@@ -56,8 +56,9 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 | | Mac | Windows |
 |---|---|---|
 | 日常打开 | 双击桌面「会议助手」 | 双击桌面「会议助手」 |
-| 也可以 | `bash scripts/start.sh` | `scripts\start.bat` 或 `powershell -ExecutionPolicy Bypass -File scripts\start.ps1` |
-| 停止服务 | `bash scripts/stop.sh` | `powershell -ExecutionPolicy Bypass -File scripts\stop.ps1` |
+| 也可以 | `bash scripts/start.sh` | 双击 `scripts\start.bat` |
+| 停止服务 | `bash scripts/stop.sh` | 双击 `scripts\stop.bat` |
+| 重启服务 | `bash scripts/restart.sh` | 双击 `scripts\restart.bat` |
 
 关掉浏览器不会关掉后台服务。要停止再跑上面的停止命令。
 
@@ -114,7 +115,7 @@ AI 深度总结按仓库里的提炼提示词生成，并用本地词表把「�
 
 `people`、`terms` 格式：字符串或 `{ "name": "正式写法", "aliases": ["口述或误识别"] }`。`projects` 可多一个可选 `"code": "项目编号"`。本机文件覆盖仓库默认里同名条目。
 
-项目词表也可在设置 → 称呼 → 项目里用 CSV 导入：下载 `项目清单模板.csv`，保留表头「项目编号」「项目名称」（其余列可有可无）。导入时按编号、名称去重，已有别名保留。
+项目词表也可在设置 → 称呼 → 项目里用 CSV 导入：点「下载模板」得到只有表头的空表（「项目编号」「项目名称」，其余列可有可无）。导入时按编号、名称去重，已有别名保留。填好的清单不要提交进仓库。
 
 原始逐字稿不改，只在深度总结里用正式姓名和标准用词。一对多称呼（如「海哥」）仅在本场参会人能唯一确定时落名，否则保留原称呼并列候选。
 
@@ -137,13 +138,13 @@ AI 深度总结按仓库里的提炼提示词生成，并用本地词表把「�
 - **同步不到听记**：确认已 `dws auth login`、账号有听记权限；查看日志 `~/.dsh/meetings/backend.log`（Windows 另有 `backend.err.log`）
 - **打不开界面**：双击「会议助手」，或浏览器访问 http://127.0.0.1:3400。Windows 请用 `scripts\install.ps1` / 桌面快捷方式，不要日常用 `node server/index.js`。
 - **安装窗口登录后闪退**：请更新到本仓库最新脚本后重跑 `install.ps1`；装完会停住等你按回车。服务实际可能已在跑，先试 http://127.0.0.1:3400。
-- **网页一直转、后台在同步**：空库首次全量会较久，但页面应仍能打开。若一直「加载中」，先刷新；仍不行则更新代码后用 `scripts\restart.ps1` 重启。
+- **网页一直转、后台在同步**：空库首次全量会较久，但页面应仍能打开。若一直「加载中」，先刷新；仍不行则更新代码后双击 `scripts\restart.bat` 重启。
 - **API Key 未生效**：在设置页保存后刷新；改环境变量则需重启服务
 - **上传提示填 dataset id**：到设置 → 上传，把四个库的 id 分别填上。只填其中一个，另外三种类型仍不能传。
 - **点上传说知识库里已有**：同事已经传过同一场听记。确认覆盖才会换成你这份；取消则不动。
 - **改了标题或记录但钉钉没变**：到设置 → 听记看写回是否打开；导入场次没有对应听记；没有编辑权时本机仍保存、钉钉不动。
 - **首次同步较慢**：`dws` 全量扫描听记；之后增量很快。空库启动约 8 秒后会自动全量一次；也可到设置 → 听记点「全量同步」。列表「更新」只拉本机没有的，最多 300 场。全量和更新都在后台跑，网页可以继续点；设置页会显示已拉进度。个别场次逐字稿钉钉还没生成时会跳过，不影响其它场。
-- **更新本仓库代码后**：`git pull` 会拿到已编译的界面，不必再 `npm run build`。然后请重启本机服务（不要只刷新网页）。双击桌面「会议助手」在代码变新时会自动重启；也可到设置 → **版本** 点「检查更新」，或 Mac 执行 `bash scripts/restart.sh`，Windows 执行 `powershell -ExecutionPolicy Bypass -File scripts\restart.ps1`。设置里的版本信息来自正在跑的后端；旧进程没有 `/api/app/update`。本机有未提交改动时不会自动覆盖。
+- **更新本仓库代码后**：`git pull` 会拿到已编译的界面，不必再 `npm run build`。然后请重启本机服务（不要只刷新网页）。双击桌面「会议助手」在代码变新时会自动重启；也可到设置 → **版本** 点「检查更新」。Mac 执行 `bash scripts/restart.sh`；Windows 请双击 `scripts\restart.bat`（不要直接双击 `.ps1`，窗口会一闪而过）。设置里的版本信息来自正在跑的后端；旧进程没有 `/api/app/update`。本机有未提交改动时不会自动覆盖。
 
 ## 开发
 
