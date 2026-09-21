@@ -2,3 +2,4 @@ node_modules/
 lib/client.js
 *.log
 .DS_Store
+docs/知识库分类与元数据.md
