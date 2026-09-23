@@ -138,7 +138,11 @@ export function SettingsPage(props) {
     const load = () => {
       if (tab === 'logs') api('/api/logs?limit=200').then((r) => setLogs(r.items || [])).catch(() => {})
       api('/api/sync-status?meta=1').then((r) => {
-        setSyncSt(r)
+        setSyncSt((prev) => ({
+          ...(r || {}),
+          sources: (r && r.sources && Object.keys(r.sources).length) ? r.sources : ((prev && prev.sources) || {}),
+          dws: (r && r.dws) || (prev && prev.dws),
+        }))
         if (!waitSync.current || !r || r.syncing) return
         const lastAt = (r.last && r.last.at) || 0
         if (lastAt < syncStartedAt.current) return
@@ -260,7 +264,7 @@ export function SettingsPage(props) {
     setWritebackBusy(true)
     api('/api/settings', { writeback: { enabled } }).then((r) => {
       apply(r)
-      toast(enabled ? '写回钉钉已打开' : '写回钉钉已关闭')
+      toast(enabled ? '写回已打开' : '写回已关闭')
     }).catch((er) => toast(String(er && er.message || er))).finally(() => setWritebackBusy(false))
   }
   const setMcp = (body) => {
@@ -592,21 +596,52 @@ export function SettingsPage(props) {
   )
   const pulling = syncBusy || !!(syncSt && syncSt.syncing)
   const writeback = st.writeback || { enabled: true }
+  const sourceMap = (syncSt && syncSt.sources) || {}
+  const sourceCards = [
+    { id: 'dingtalk', label: '钉钉', hint: '扫码登录后拉 AI 听记。可写回标题和记录。', install: 'npm 会随安装脚本装 dws' },
+    { id: 'feishu', label: '飞书', hint: '要过两页：先创建应用，再授权妙记。可写回标题和总结。', install: 'npm install -g @larksuite/cli' },
+    { id: 'tencent', label: '腾讯会议', hint: '扫码登录后拉录制智能纪要和元宝纪要。只读，不写回。', install: 'npm install -g @tencentcloud/tmeet' },
+  ]
+  const loginSource = (id) => {
+    api('/api/sources/login', { provider: id }).then((r) => {
+      toast((r && r.message) || '请完成授权')
+    }).catch((er) => toast(String(er && er.message || er)))
+  }
   const syncPane = (
     <div className="page-inner">
       <h1>听记</h1>
-      <p className="lede">从钉钉拉到本机，和把本机改动写回钉钉，是两件事。</p>
+      <p className="lede">钉钉、飞书、腾讯谁登录了就拉谁。写回只作用于支持改标题/纪要的来源。</p>
+      {sourceCards.map((card) => {
+        const s = sourceMap[card.id] || {}
+        return (
+          <div className="block" key={card.id}>
+            <h3>{card.label}</h3>
+            <p className="lede">{card.hint}</p>
+            <p className="status">{
+              s.authenticated
+                ? ('已登录' + (s.user ? (' · ' + s.user) : ''))
+                : (s.error || '未登录')
+            }</p>
+            {s.authenticated
+              ? null
+              : <button className="quiet" onClick={() => loginSource(card.id)}>登录</button>}
+            {!s.authenticated && /未安装/.test(s.error || '')
+              ? <p className="lede">{card.install}</p>
+              : null}
+          </div>
+        )
+      })}
       <div className="block">
-        <h3>写回钉钉</h3>
-        <p className="lede">保存标题和「记录」（钉钉纪要）时，是否改对应听记。关闭后只改本机。待办、逐字稿、本机总结不会写回。</p>
+        <h3>写回来源</h3>
+        <p className="lede">打开后，保存标题和「记录」时会尽量写回钉钉或飞书。腾讯会议和导入场次只改本机。待办、逐字稿、本机总结不会写回。</p>
         <div className="filters">
           <button className={writeback.enabled ? 'on' : ''} disabled={writebackBusy} onClick={() => setWriteback(true)}>打开</button>
           <button className={!writeback.enabled ? 'on' : ''} disabled={writebackBusy} onClick={() => setWriteback(false)}>关闭</button>
         </div>
       </div>
       <div className="block">
-        <h3>从钉钉同步</h3>
-        <p className="lede">列表上的「更新」只拉本机还没有的，最多 300 场。全量会把尚未入库的都拉完，可能要较久，但在后台跑，网页可以继续用。</p>
+        <h3>同步</h3>
+        <p className="lede">列表「更新」只拉本机还没有的，每个来源最多 300 场。全量会把尚未入库的都拉完，未登录的来源会跳过。</p>
         <p className="status">{
           pulling
             ? (syncProgressLabel(syncSt) || '同步中…页面可继续用')
@@ -617,7 +652,7 @@ export function SettingsPage(props) {
         ? (
           <ConfirmSheet
             title="全量同步听记"
-            lede="从钉钉把本机还没有的听记都拉下来。已在本机的不覆盖你改过的记录和逐字稿；本机删过的不会再回来。钉钉未登录会失败。"
+            lede="从已登录的钉钉、飞书、腾讯把本机还没有的听记都拉下来。已在本机的不覆盖你改过的记录和逐字稿；本机删过的不会再回来。未登录的来源会跳过。"
             confirmLabel="开始全量"
             busy={pulling}
             onConfirm={doFullSync}

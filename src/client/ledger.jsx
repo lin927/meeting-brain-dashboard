@@ -403,7 +403,7 @@ export function LedgerPage(props) {
         ? (
           <ConfirmSheet
             title="删除待办"
-            lede={'从本机台账去掉「' + current.title + '」。钉钉里的待办不会动。'}
+            lede={'从本机台账去掉「' + current.title + '」。来源侧的待办不会动。'}
             confirmLabel="删除"
             danger
             busy={delBusy}

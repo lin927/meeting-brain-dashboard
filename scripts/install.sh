@@ -2,7 +2,7 @@
 # =============================================================================
 # 会议助手 · 本机一键安装（macOS）
 #
-# 1. 检查/安装 Node.js 与钉钉 DWS CLI
+# 1. 检查/安装 Node.js 与钉钉 DWS CLI（飞书/腾讯 CLI 可选，不自动装）
 # 2. 安装依赖（界面产物 public/app.js 已在仓库里，缺文件时才现场编译）
 # 3. 把「会议助手」放到桌面，启动 localhost:3400 并打开浏览器
 #
@@ -143,6 +143,200 @@ else
   warn "安装完成后重新运行本脚本，并执行: dws auth login"
 fi
 
+# ---------- 2b. 飞书 / 腾讯会议 CLI（可选，同事按需） ----------
+ask_yes() {
+  local prompt="$1"
+  local ans=""
+  read -r -p "[会议助手] ${prompt} (y/N): " ans || true
+  [ "$ans" = "y" ] || [ "$ans" = "Y" ]
+}
+
+pipe_open_url() {
+  local opened=0 line url
+  while IFS= read -r line || [ -n "$line" ]; do
+    printf '%s\n' "$line"
+    if [ "$opened" -eq 0 ]; then
+      url="$(printf '%s' "$line" | grep -oE 'https://[^[:space:]"]+' | head -1 || true)"
+      if [ -n "$url" ]; then
+        opened=1
+        open "$url" 2>/dev/null || true
+      fi
+    fi
+  done
+}
+
+feishu_configured() {
+  local out
+  out="$(lark-cli config show 2>/dev/null || true)"
+  echo "$out" | grep -q 'not_configured' && return 1
+  echo "$out" | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true' && return 0
+  echo "$out" | grep -Eqi '"app[_-]?id"' && return 0
+  return 1
+}
+
+feishu_logged_in() {
+  local out
+  out="$(lark-cli auth status --json 2>/dev/null || true)"
+  printf '%s' "$out" | python3 -c '
+import json,sys
+try:
+    j=json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+u=(j.get("identities") or {}).get("user") or {}
+sys.exit(0 if u.get("userName") and u.get("tokenStatus") == "valid" else 1)
+' 2>/dev/null
+}
+
+feishu_parse_device() {
+  python3 -c '
+import json,re,sys
+t=sys.stdin.read()
+j={}
+try:
+    j=json.loads(t)
+except Exception:
+    m=re.search(r"\{[\s\S]*\}", t)
+    if m:
+        try: j=json.loads(m.group(0))
+        except Exception: j={}
+if isinstance(j.get("data"), dict):
+    j=j["data"]
+url=j.get("verification_uri_complete") or j.get("verification_url") or j.get("verification_uri") or j.get("url") or ""
+code=j.get("device_code") or j.get("deviceCode") or ""
+if not url:
+    m=re.search(r"https://accounts\.feishu\.cn[^\s\"]+", t)
+    if m: url=m.group(0)
+print(url)
+print(code)
+'
+}
+
+feishu_user_login() {
+  echo
+  info "第 2 步 / 共 2 步：授权读取妙记。"
+  warn "会再打开一个浏览器页，和刚才「创建应用成功」不是同一页。请在新页面点允许。"
+  local raw url code
+  set +e
+  raw="$(lark-cli auth login --domain minutes --no-wait --json 2>&1)"
+  set -e
+  printf '%s\n' "$raw"
+  url="$(printf '%s' "$raw" | feishu_parse_device | sed -n '1p')"
+  code="$(printf '%s' "$raw" | feishu_parse_device | sed -n '2p')"
+  if [ -n "$url" ]; then
+    warn "请完成这个授权页：$url"
+    open "$url" 2>/dev/null || true
+  fi
+  set +e
+  if [ -n "$code" ]; then
+    lark-cli auth login --device-code "$code"
+  else
+    lark-cli auth login --domain minutes
+  fi
+  st=$?
+  set -e
+  if feishu_logged_in; then
+    return 0
+  fi
+  return "$st"
+}
+
+feishu_setup() {
+  if ! feishu_configured; then
+    echo
+    info "第 1 步 / 共 2 步：创建并绑定飞书应用。"
+    warn "请在打开的页面里点允许。完成后本窗口会继续第 2 步（授权妙记）。"
+    set +e
+    set +o pipefail
+    lark-cli config init --new --brand feishu --lang zh 2>&1 | pipe_open_url
+    init_st=${PIPESTATUS[0]}
+    set -o pipefail
+    set -e
+    if [ "$init_st" != "0" ]; then
+      warn "创建应用未完成。可稍后重跑本脚本，或在终端执行："
+      warn "  lark-cli config init --new --brand feishu --lang zh"
+      warn "  lark-cli auth login --domain minutes"
+      return 1
+    fi
+    info "应用已绑定。下面还要再授权一次妙记，不是重复。"
+  fi
+  if feishu_logged_in; then
+    info "飞书已登录"
+    return 0
+  fi
+  feishu_user_login || true
+  if feishu_logged_in; then
+    info "飞书已就绪（未勾选的额外权限不影响拉妙记）"
+    return 0
+  fi
+  warn "飞书登录未完成。可稍后在设置 → 听记点「登录」，或执行: lark-cli auth login --domain minutes"
+  return 1
+}
+
+if ! command -v lark-cli >/dev/null 2>&1; then
+  echo
+  warn "飞书妙记需要 lark-cli。未装不影响钉钉。"
+  if ask_yes "是否安装飞书并完成登录？"; then
+    info "正在安装 @larksuite/cli…"
+    if npm install -g @larksuite/cli; then
+      hash -r 2>/dev/null || true
+    else
+      warn "安装失败。可稍后手动执行: npm install -g @larksuite/cli"
+    fi
+  fi
+fi
+if command -v lark-cli >/dev/null 2>&1; then
+  info "飞书 lark-cli 已安装"
+  if feishu_logged_in; then
+    info "飞书已登录"
+  else
+    feishu_setup || true
+  fi
+else
+  warn "未装飞书 CLI。要用妙记时重跑本脚本并选择安装，或执行: npm install -g @larksuite/cli"
+fi
+
+if ! command -v tmeet >/dev/null 2>&1; then
+  echo
+  warn "腾讯会议纪要需要 tmeet。未装不影响钉钉。"
+  if ask_yes "是否现在安装腾讯会议 CLI？"; then
+    info "正在安装 @tencentcloud/tmeet…"
+    if npm install -g @tencentcloud/tmeet; then
+      hash -r 2>/dev/null || true
+    else
+      warn "安装失败。可稍后手动执行: npm install -g @tencentcloud/tmeet"
+    fi
+  fi
+fi
+if command -v tmeet >/dev/null 2>&1; then
+  info "腾讯会议 tmeet 已安装"
+  TM_STATUS="$(tmeet auth status 2>/dev/null || true)"
+  if echo "$TM_STATUS" | grep -Eqi 'not logged in|未登录'; then
+    TM_OK=0
+  elif echo "$TM_STATUS" | grep -Eqi 'logged|已登录|openid|user_name|userName'; then
+    TM_OK=1
+  else
+    TM_OK=0
+  fi
+  if [ "$TM_OK" = "1" ]; then
+    info "腾讯会议已登录"
+  elif ask_yes "腾讯会议未登录，现在扫码登录？"; then
+    set +e
+    tmeet auth login
+    set -e
+    TM_AFTER="$(tmeet auth status 2>/dev/null || true)"
+    if echo "$TM_AFTER" | grep -Eqi 'logged|已登录|openid|user_name|userName'; then
+      info "腾讯会议已登录"
+    else
+      warn "腾讯登录未完成，可稍后在设置 → 听记点「登录」"
+    fi
+  else
+    info "跳过腾讯登录。需要时到设置 → 听记点「登录」。"
+  fi
+else
+  warn "未装腾讯会议 CLI。要用纪要时执行: npm install -g @tencentcloud/tmeet"
+fi
+
 # ---------- 3. 安装依赖（界面已提交 public/app.js，缺文件时才编译） ----------
 info "安装依赖…"
 cd "$REPO_DIR"
@@ -182,6 +376,6 @@ info "======================================================"
 info "安装完成。浏览器应已打开 http://127.0.0.1:3400"
 info "  · 以后使用：双击桌面上的「会议助手」"
 info "  · 设置页填写大模型 API Key（问答/总结用）"
-info "  · 点「更新」拉取钉钉听记（需已完成 dws 登录）"
+info "  · 点「更新」拉取已登录来源的听记（钉钉 / 飞书 / 腾讯）"
 info "  · 停止服务：bash scripts/stop.sh"
 info "======================================================"

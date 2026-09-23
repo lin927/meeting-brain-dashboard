@@ -28,10 +28,9 @@ import {
 } from '../lib/db.js'
 import { setMeetingVisibility, peekCompanyMeeting, testRagflow, repairPublishedMetadata } from '../lib/publish.js'
 import { importMeeting } from '../lib/import-meeting.js'
-import { refreshMeeting } from '../lib/pull.js'
-import { updateDingTalkTitle, updateDingTalkSummary } from '../lib/minutes-write.js'
-import { syncStatus } from '../lib/sync-status.js'
 import { persistSyncResult, isSyncing, syncProgress, enqueueSync } from '../lib/sync-run.js'
+import { syncStatus } from '../lib/sync-status.js'
+import { refreshByMeeting, writeTitle, writeSummary, spawnLogin, authStatus, inferProvider, providerMeta } from '../lib/providers/index.js'
 import { applyAppUpdate, armAppUpdate, checkAppUpdate, markRunningRevision, scheduleRestart } from '../lib/app-update.js'
 import { applyZipBuffer } from '../lib/app-zip.js'
 import { listLogs, pushLog } from '../lib/runtime-log.js'
@@ -87,6 +86,7 @@ app.get('/api/meetings', async (req, res) => {
       tag: req.query.tag,
       type: req.query.type,
       filter: req.query.filter,
+      provider: req.query.provider,
       cursor: req.query.cursor,
       limit: req.query.limit,
       id: req.query.id,
@@ -184,17 +184,34 @@ app.get('/api/sync-status', async (req, res) => {
 
 app.post('/api/sync', async (req, res) => {
   const full = !!(req.body && req.body.full)
+  const providers = req.body && req.body.providers
   if (isSyncing()) {
     return ok(res, {
       success: true, started: false, syncing: true, full,
       message: '正在同步中…页面可继续用',
     })
   }
-  startSync({ full }, full ? '全量' : '更新')
+  startSync({ full, providers }, full ? '全量' : '更新')
   ok(res, {
     success: true, started: true, syncing: true, full,
     message: full ? '开始全量同步，页面可继续用' : '开始更新，页面可继续用',
   })
+})
+
+app.post('/api/sources/login', async (req, res) => {
+  try {
+    const id = String((req.body && req.body.provider) || '')
+    if (!['dingtalk', 'feishu', 'tencent'].includes(id)) return fail(res, new Error('未知来源'))
+    try {
+      const auth = await authStatus(id)
+      const r = spawnLogin(id, auth)
+      ok(res, { ok: true, ...r, message: r.message || '已打开授权，请在浏览器完成登录' })
+    } catch (e) {
+      const cmd = id === 'feishu' ? 'lark-cli config init --new --brand feishu --lang zh && lark-cli auth login --domain minutes'
+        : (id === 'tencent' ? 'tmeet auth login' : 'dws auth login')
+      ok(res, { ok: false, command: cmd, message: '请在本机终端执行：' + cmd })
+    }
+  } catch (e) { fail(res, e) }
 })
 
 app.get('/api/app/update', async (req, res) => {
@@ -285,7 +302,6 @@ app.patch('/api/meeting', async (req, res) => {
     }
     const prevTitle = m.title
     const prevSummary = m.summary
-    const meetingSource = m.source
     const writebackOn = resolveWriteback(db).enabled
     db.close()
     if (wasCompany && nextType === '个人') {
@@ -313,35 +329,28 @@ app.patch('/api/meeting', async (req, res) => {
     }
     let dingTalkTitle = null
     let dingTalkSummary = null
-    const skipDingTalk = req.body.skipDingTalk === true || !writebackOn
+    const skipWrite = req.body.skipDingTalk === true || req.body.skipWriteback === true || !writebackOn
+    const meetingRow = { ...m, ...fields }
     if (fields.title !== undefined && String(fields.title) !== String(prevTitle || '')) {
-      if (skipDingTalk) {
+      if (skipWrite) {
         dingTalkTitle = {
           ok: true,
           status: 'skipped_local',
-          message: writebackOn ? '本机已保存，未改钉钉听记标题' : '本机已保存，写回钉钉已关闭',
+          message: writebackOn ? '本机已保存，未改来源侧标题' : '本机已保存，写回已关闭',
         }
       } else {
-        dingTalkTitle = await updateDingTalkTitle({
-          taskUuid: id,
-          title: fields.title,
-          source: meetingSource,
-        })
+        dingTalkTitle = await writeTitle(meetingRow, fields.title)
       }
     }
     if (hasSummary && String(req.body.summary) !== String(prevSummary || '')) {
-      if (skipDingTalk) {
+      if (skipWrite) {
         dingTalkSummary = {
           ok: true,
           status: 'skipped_local',
-          message: writebackOn ? '本机已保存，未改钉钉纪要' : '本机已保存，写回钉钉已关闭',
+          message: writebackOn ? '本机已保存，未改来源侧纪要' : '本机已保存，写回已关闭',
         }
       } else {
-        dingTalkSummary = await updateDingTalkSummary({
-          taskUuid: id,
-          content: req.body.summary,
-          source: meetingSource,
-        })
+        dingTalkSummary = await writeSummary(meetingRow, req.body.summary)
       }
     }
     const detail = meetingDetail(id)
@@ -377,12 +386,17 @@ app.post('/api/meeting/refresh', async (req, res) => {
     const id = String((req.body && req.body.id) || '')
     if (!id) return fail(res, new Error('缺少 id'))
     if (isSyncing()) return fail(res, new Error('正在同步中…请稍候'))
-    const r = await refreshMeeting({ taskUuid: id })
+    const db = open()
+    const m = getMeeting(db, id)
+    db.close()
+    if (!m) return fail(res, new Error('未找到会议'))
+    const r = await refreshByMeeting(m)
     const bits = []
     if (r.keptRecord) bits.push('本机改过的记录未覆盖')
     if (r.keptTranscript) bits.push('本机改过的逐字稿未覆盖')
     if (r.transcriptCount) bits.push('逐字稿 ' + r.transcriptCount + ' 段')
-    const message = bits.length ? ('已从钉钉重拉；' + bits.join('，')) : '已从钉钉重拉'
+    const from = providerMeta(inferProvider(m)).label
+    const message = bits.length ? ('已从' + from + '重拉；' + bits.join('，')) : ('已从' + from + '重拉')
     pushLog('更新', '重拉 ' + (r.title || id) + (bits.length ? '（' + bits.join('，') + '）' : ''))
     const detail = meetingDetail(id)
     if (detail) detail.refresh = { ok: true, keptRecord: r.keptRecord, keptTranscript: r.keptTranscript, message }

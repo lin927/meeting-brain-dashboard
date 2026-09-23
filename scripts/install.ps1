@@ -1,7 +1,7 @@
 ﻿# =============================================================================
 # 会议助手 · 本机一键安装（Windows）
 #
-# 1. 检查/安装 Node.js 与钉钉 DWS CLI
+# 1. 检查/安装 Node.js 与钉钉 DWS CLI（飞书/腾讯 CLI 可选，不自动装）
 # 2. 安装依赖（界面产物 public/app.js 已在仓库里，缺文件时才现场编译）
 # 3. 把「会议助手」放到桌面，启动 localhost:3400 并打开浏览器
 #
@@ -135,6 +135,157 @@ if (Get-Command dws -ErrorAction SilentlyContinue) {
     Warn '安装完成后重新运行本脚本，并执行: dws auth login'
 }
 
+function Ask-Yes([string]$Prompt) {
+    $ans = Read-Host "[会议助手] $Prompt (y/N)"
+    return ($ans -eq 'y' -or $ans -eq 'Y')
+}
+
+function Test-FeishuConfigured {
+    $out = Invoke-NativeText { & lark-cli config show }
+    if ($out -match 'not_configured') { return $false }
+    if ($out -match '"ok"\s*:\s*true') { return $true }
+    if ($out -match '"app[_-]?id"') { return $true }
+    return $false
+}
+
+function Test-FeishuLoggedIn {
+    $out = Invoke-NativeText { & lark-cli auth status --json }
+    try {
+        $j = $out | ConvertFrom-Json
+        $u = $j.identities.user
+        return [bool]($u -and $u.userName -and ($u.tokenStatus -eq 'valid' -or $u.status -eq 'ready'))
+    } catch {
+        return $false
+    }
+}
+
+function Complete-FeishuUserLogin {
+    Write-Host ''
+    Info '第 2 步 / 共 2 步：授权读取妙记。'
+    Warn '会再打开一个浏览器页，和刚才「创建应用成功」不是同一页。请在新页面点允许。'
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $raw = Invoke-NativeText { & lark-cli auth login --domain minutes --no-wait --json }
+    Write-Host $raw
+    $url = $null
+    $code = $null
+    try {
+        $j = $raw | ConvertFrom-Json
+        if ($j.data) { $j = $j.data }
+        $url = $j.verification_uri_complete; if (-not $url) { $url = $j.verification_url }
+        if (-not $url) { $url = $j.verification_uri }; if (-not $url) { $url = $j.url }
+        $code = $j.device_code; if (-not $code) { $code = $j.deviceCode }
+    } catch { }
+    if (-not $url -and $raw -match 'https://accounts\.feishu\.cn[^\s"]+') { $url = $Matches[0] }
+    if ($url) {
+        Warn "请完成这个授权页：$url"
+        Start-Process $url
+    }
+    if ($code) {
+        & lark-cli auth login --device-code $code
+    } else {
+        & lark-cli auth login --domain minutes
+    }
+    $ErrorActionPreference = $oldEap
+    if (Test-FeishuLoggedIn) { return 0 }
+    return $LASTEXITCODE
+}
+
+function Complete-FeishuSetup {
+    if (-not (Test-FeishuConfigured)) {
+        Write-Host ''
+        Info '第 1 步 / 共 2 步：创建并绑定飞书应用。'
+        Warn '请在打开的页面里点允许。完成后本窗口会继续第 2 步（授权妙记）。'
+        $oldEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        & lark-cli config init --new --brand feishu --lang zh
+        $initSt = $LASTEXITCODE
+        $ErrorActionPreference = $oldEap
+        if ($initSt -ne 0) {
+            Warn '创建应用未完成。可稍后重跑本脚本，或在终端执行：'
+            Warn '  lark-cli config init --new --brand feishu --lang zh'
+            Warn '  lark-cli auth login --domain minutes'
+            return
+        }
+        Info '应用已绑定。下面还要再授权一次妙记，不是重复。'
+    }
+    if (Test-FeishuLoggedIn) {
+        Info '飞书已登录'
+        return
+    }
+    Complete-FeishuUserLogin | Out-Null
+    if (Test-FeishuLoggedIn) {
+        Info '飞书已就绪（未勾选的额外权限不影响拉妙记）'
+    } else {
+        Warn '飞书登录未完成。可稍后在设置 → 听记点「登录」，或执行: lark-cli auth login --domain minutes'
+    }
+}
+
+# ---------- 2b. 飞书 / 腾讯会议 CLI（可选，同事按需） ----------
+if (-not (Get-Command lark-cli -ErrorAction SilentlyContinue)) {
+    Write-Host ''
+    Warn '飞书妙记需要 lark-cli。未装不影响钉钉。'
+    if (Ask-Yes '是否安装飞书并完成登录？') {
+        Info '正在安装 @larksuite/cli…'
+        if ((Invoke-Npm install -g @larksuite/cli) -eq 0) {
+            Refresh-Path
+        } else {
+            Warn '安装失败。可稍后手动执行: npm install -g @larksuite/cli'
+        }
+    }
+}
+if (Get-Command lark-cli -ErrorAction SilentlyContinue) {
+    Info '飞书 lark-cli 已安装'
+    if (Test-FeishuLoggedIn) {
+        Info '飞书已登录'
+    } else {
+        Complete-FeishuSetup
+    }
+} else {
+    Warn '未装飞书 CLI。要用妙记时重跑本脚本并选择安装，或执行: npm install -g @larksuite/cli'
+}
+
+if (-not (Get-Command tmeet -ErrorAction SilentlyContinue)) {
+    Write-Host ''
+    Warn '腾讯会议纪要需要 tmeet。未装不影响钉钉。'
+    if (Ask-Yes '是否现在安装腾讯会议 CLI？') {
+        Info '正在安装 @tencentcloud/tmeet…'
+        if ((Invoke-Npm install -g @tencentcloud/tmeet) -eq 0) {
+            Refresh-Path
+        } else {
+            Warn '安装失败。可稍后手动执行: npm install -g @tencentcloud/tmeet'
+        }
+    }
+}
+if (Get-Command tmeet -ErrorAction SilentlyContinue) {
+    Info '腾讯会议 tmeet 已安装'
+    $tmStatus = Invoke-NativeText { & tmeet auth status }
+    $tmOk = $false
+    if ($tmStatus -match 'not logged in' -or $tmStatus -match '未登录') {
+        $tmOk = $false
+    } elseif ($tmStatus -match 'logged|已登录|openid|user_name|userName') {
+        $tmOk = $true
+    }
+    if ($tmOk) {
+        Info '腾讯会议已登录'
+    } elseif (Ask-Yes '腾讯会议未登录，现在扫码登录？') {
+        $oldEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        & tmeet auth login
+        $ErrorActionPreference = $oldEap
+        $tmAfter = Invoke-NativeText { & tmeet auth status }
+        if ($tmAfter -match 'logged|已登录|openid|user_name|userName') {
+            Info '腾讯会议已登录'
+        } else {
+            Warn '腾讯登录未完成，可稍后在设置 → 听记点「登录」'
+        }
+    } else {
+        Info '跳过腾讯登录。需要时到设置 → 听记点「登录」。'
+    }
+} else {
+    Warn '未装腾讯会议 CLI。要用纪要时执行: npm install -g @tencentcloud/tmeet'
+}
+
 # ---------- 3. 安装依赖（界面已提交 public/app.js，缺文件时才编译） ----------
 Info '安装依赖…'
 Set-Location $RepoDir
@@ -179,7 +330,7 @@ Info '======================================================'
 Info '安装完成。浏览器应已打开 http://127.0.0.1:3400'
 Info '  · 以后使用：双击桌面上的「会议助手」'
 Info '  · 设置页填写大模型 API Key（问答/总结用）'
-Info '  · 点「更新」拉取钉钉听记（需已完成 dws 登录）'
+Info '  · 点「更新」拉取已登录来源的听记（钉钉 / 飞书 / 腾讯）'
 Info '  · 停止服务：双击 scripts\stop.bat'
 Info '  · 不要用 node server/index.js 当日常启动（请用桌面快捷方式或 start.ps1）'
 Info '======================================================'

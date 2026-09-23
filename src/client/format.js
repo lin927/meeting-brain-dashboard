@@ -60,14 +60,26 @@ export function companyMark(m) {
   return t && t !== '个人' ? '已到' + t : '已上传'
 }
 
-export function srcLabel(s) {
-  if (s === 'import') return '导入'
-  if (s === 'shared') return '分享'
-  return '听记'
+export const PROVIDERS = [
+  { id: 'dingtalk', label: '钉钉' },
+  { id: 'feishu', label: '飞书' },
+  { id: 'tencent', label: '腾讯' },
+  { id: 'import', label: '导入' },
+]
+
+export function providerLabel(p) {
+  return ({ dingtalk: '钉钉', feishu: '飞书', tencent: '腾讯', import: '导入' })[p] || ''
+}
+
+export function srcLabel(s, provider) {
+  if (s === 'import' || provider === 'import') return '导入'
+  const p = providerLabel(provider)
+  if (s === 'shared') return p ? (p + '·分享') : '分享'
+  return p || '听记'
 }
 
 export function originLabel(o) {
-  return { 听记: '钉钉听记', 总结: '会后总结', 手工: '手工' }[o] || o || '听记'
+  return { 听记: '钉钉听记', 钉钉听记: '钉钉听记', 飞书妙记: '飞书妙记', 腾讯纪要: '腾讯纪要', 总结: '会后总结', 手工: '手工' }[o] || o || '听记'
 }
 
 export function lastSyncLabel(st) {
@@ -80,7 +92,7 @@ export function lastSyncLabel(st) {
 export function syncProgressLabel(st) {
   const p = st && st.progress
   if (!p) return ''
-  if (p.phase === 'list') return '正在列出听记…'
+  if (p.phase === 'list') return (p.provider === 'feishu' ? '正在列出飞书妙记…' : p.provider === 'tencent' ? '正在列出腾讯录制…' : '正在列出听记…')
   if (p.phase === 'index') return '正在建立索引…'
   if (p.phase === 'pull' && p.total) {
     const n = (p.current || 0) + '/' + p.total

@@ -230,7 +230,7 @@ export function MeetingDetail(props) {
     const prev = String((d && d.title) || '')
     if (!next) { setTitle(prev); toast('先写标题'); return }
     if (next === prev) return
-    const shared = d && d.source === 'shared'
+    const shared = d && d.source === 'shared' && (!d.provider || d.provider === 'dingtalk')
     const writebackOn = d && d.writebackEnabled !== false
     if (shared && writebackOn && !(opts && opts.sharedTitleDecided)) {
       titleOnlyRef.current = true
@@ -251,7 +251,7 @@ export function MeetingDetail(props) {
   const saveEdit = (opts) => {
     if (saving) return
     const titleChanged = String(title).trim() !== String((d && d.title) || '')
-    const shared = d && d.source === 'shared'
+    const shared = d && d.source === 'shared' && (!d.provider || d.provider === 'dingtalk')
     const writebackOn = d && d.writebackEnabled !== false
     if (titleChanged && shared && writebackOn && !(opts && opts.sharedTitleDecided)) {
       titleOnlyRef.current = false
@@ -348,7 +348,8 @@ export function MeetingDetail(props) {
     setAddingTag(false)
   }
   const removeLocal = () => setConfirmDel(true)
-  const canRefresh = d && d.source !== 'import' && !String(uuid || '').startsWith('import-')
+  const canRefresh = d && d.canRefresh !== false && d.provider !== 'import' && d.source !== 'import' && !String(uuid || '').startsWith('import-')
+  const fromLabel = (d && d.providerLabel) || '来源'
   const doRefresh = () => {
     if (refreshBusy) return
     setRefreshBusy(true)
@@ -365,12 +366,12 @@ export function MeetingDetail(props) {
       setScope((r && (r.type || r.scope)) || '')
       setProjectName((r && r.projectName) || '')
       setTags((r && r.tags) || [])
-      toast((r && r.refresh && r.refresh.message) || '已从钉钉重拉')
+      toast((r && r.refresh && r.refresh.message) || ('已从' + fromLabel + '重拉'))
       if (onChanged) onChanged()
     }).catch((err) => {
       const msg = String(err && err.message || err)
       if (/timeout|timed out|TimeoutError/i.test(msg)) {
-        toast('还在从钉钉拉，请等几分钟再点这场会。先不要反复刷新网页。')
+        toast('还在从' + fromLabel + '拉，请等几分钟再点这场会。先不要反复刷新网页。')
       } else {
         toast(msg)
       }
@@ -610,10 +611,12 @@ export function MeetingDetail(props) {
     ? '行首【姓名】尽量保留，生成总结还靠它。'
     : (editingBody === 'record'
       ? (d.writebackEnabled === false
-        ? '只保存在本机，写回钉钉已关闭。'
-        : '保存后会写回钉钉听记纪要。没有编辑权或导入场次只改本机。')
+        ? '只保存在本机，写回已关闭。'
+        : (d.writebackCapable === false
+          ? '只保存在本机，这个来源不支持写回。'
+          : ('保存后会写回' + fromLabel + '纪要。没有编辑权或导入场次只改本机。')))
       : (editingBody === 'deep'
-        ? '只保存在本机，不写回钉钉。'
+        ? '只保存在本机，不写回来源。'
         : (sub === 'record' && d.summaryEdited
           ? '本机改过，听记再拉也不会盖掉。'
           : (sub === 'transcript' && d.transcriptEdited
@@ -632,7 +635,7 @@ export function MeetingDetail(props) {
         editing
           ? e('input', { type: 'text', style: { marginTop: 8 }, value: attendees, onChange: (ev) => setAttendees(ev.target.value), placeholder: '参会人' })
           : e('p', { className: 'meta-line' },
-            [fmtDateTime(d.startTime), d.attendees, srcLabel(d.source), synced ? companyMark(d) : '', personal ? '个人不上传' : ''].filter(Boolean).join(' · ')),
+            [fmtDateTime(d.startTime), d.attendees, srcLabel(d.source, d.provider), synced ? companyMark(d) : '', personal ? '个人不上传' : ''].filter(Boolean).join(' · ')),
         tagRow),
       e('div', { className: 'tools' }, tools)),
     e('div', { className: 'tabs' },
@@ -709,7 +712,7 @@ export function MeetingDetail(props) {
         : e('button', { className: 'quiet', onClick: () => { setAddingTodo(true); setTodoTitle(''); setTodoOwner('') } }, '+ 待办')),
     confirmDel ? e(ConfirmSheet, {
       title: '从本机移除',
-      lede: '只删本机列表里的这场会。钉钉听记还在。本场记录、逐字稿、总结和待办都会从本机去掉，以后更新也不会再拉回来。',
+      lede: '只删本机列表里的这场会。对方听记还在。本场记录、逐字稿、总结和待办都会从本机去掉，以后更新也不会再拉回来。',
       confirmLabel: '删除',
       danger: true,
       busy: delBusy,
@@ -717,10 +720,10 @@ export function MeetingDetail(props) {
       onClose: () => { if (!delBusy) setConfirmDel(false) },
     }) : null,
     confirmRefresh ? e(ConfirmSheet, {
-      title: '从钉钉重拉',
+      title: '从' + fromLabel + '重拉',
       lede: refreshBusy
-        ? '正在从钉钉拉标题、记录和逐字稿。长会可能要几分钟。请等提示「已从钉钉重拉」，先不要刷新网页。'
-        : '用钉钉最新的标题、记录、逐字稿和待办覆盖本机。本机手改过的记录、逐字稿不覆盖。本机总结、类型、项目、标签和是否上传都不变。长会可能要几分钟，拉完前请不要刷新网页。',
+        ? ('正在从' + fromLabel + '拉标题、记录和逐字稿。长会可能要几分钟。请等提示已重拉，先不要刷新网页。')
+        : ('用' + fromLabel + '最新的标题、记录、逐字稿和待办覆盖本机。本机手改过的记录、逐字稿不覆盖。本机总结、类型、项目、标签和是否上传都不变。长会可能要几分钟，拉完前请不要刷新网页。'),
       confirmLabel: '重拉',
       busyLabel: '重拉中…',
       busy: refreshBusy,
@@ -729,7 +732,7 @@ export function MeetingDetail(props) {
     }) : null,
     confirmDeep ? e(ConfirmSheet, {
       title: '重新生成总结',
-      lede: '会覆盖本机已保存的总结，包括你改过的内容。钉钉听记不会改。',
+      lede: '会覆盖本机已保存的总结，包括你改过的内容。来源侧听记不会改。',
       confirmLabel: '重新生成',
       onConfirm: runDeep,
       onClose: () => setConfirmDeep(false),
@@ -872,7 +875,7 @@ export function ImportSheet(props) {
       props.onImported(r.id)
     }).catch((err) => props.toast(String(err && err.message || err))).finally(() => setBusy(false))
   }
-  return e(SheetFrame, { title: '导入', lede: '不是钉钉听记的纪要，贴进来成为一场会议。以后飞书等来源会和钉钉一样走「更新」。', onClose: props.onClose },
+  return e(SheetFrame, { title: '导入', lede: '把不是从听记同步来的纪要贴进来，成为一场本机会议。钉钉、飞书、腾讯请到列表点「更新」。', onClose: props.onClose },
       e('textarea', { className: 'paste', placeholder: '粘贴纪要或转写', value: body, onChange: (ev) => setBody(ev.target.value) }),
       e('div', { className: 'field-row' },
         e('div', { className: 'field' }, e('span', null, '标题'), e('input', { type: 'text', placeholder: '这场会叫什么', value: title, onChange: (ev) => setTitle(ev.target.value) })),

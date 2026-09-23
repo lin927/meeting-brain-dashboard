@@ -1,7 +1,7 @@
 {
   "name": "meeting-brain-dashboard",
   "version": "0.2.0",
-  "description": "会议智能助手：本机同步钉钉听记、独立 Web 界面、本地向量检索。",
+  "description": "会议智能助手：本机同步钉钉/飞书/腾讯听记、独立 Web 界面、本地向量检索。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

@@ -7458,13 +7458,23 @@
     const t = m.type || m.scope;
     return t && t !== "\u4E2A\u4EBA" ? "\u5DF2\u5230" + t : "\u5DF2\u4E0A\u4F20";
   }
-  function srcLabel(s) {
-    if (s === "import") return "\u5BFC\u5165";
-    if (s === "shared") return "\u5206\u4EAB";
-    return "\u542C\u8BB0";
+  var PROVIDERS = [
+    { id: "dingtalk", label: "\u9489\u9489" },
+    { id: "feishu", label: "\u98DE\u4E66" },
+    { id: "tencent", label: "\u817E\u8BAF" },
+    { id: "import", label: "\u5BFC\u5165" }
+  ];
+  function providerLabel(p) {
+    return { dingtalk: "\u9489\u9489", feishu: "\u98DE\u4E66", tencent: "\u817E\u8BAF", import: "\u5BFC\u5165" }[p] || "";
+  }
+  function srcLabel(s, provider) {
+    if (s === "import" || provider === "import") return "\u5BFC\u5165";
+    const p = providerLabel(provider);
+    if (s === "shared") return p ? p + "\xB7\u5206\u4EAB" : "\u5206\u4EAB";
+    return p || "\u542C\u8BB0";
   }
   function originLabel(o) {
-    return { \u542C\u8BB0: "\u9489\u9489\u542C\u8BB0", \u603B\u7ED3: "\u4F1A\u540E\u603B\u7ED3", \u624B\u5DE5: "\u624B\u5DE5" }[o] || o || "\u542C\u8BB0";
+    return { \u542C\u8BB0: "\u9489\u9489\u542C\u8BB0", \u9489\u9489\u542C\u8BB0: "\u9489\u9489\u542C\u8BB0", \u98DE\u4E66\u5999\u8BB0: "\u98DE\u4E66\u5999\u8BB0", \u817E\u8BAF\u7EAA\u8981: "\u817E\u8BAF\u7EAA\u8981", \u603B\u7ED3: "\u4F1A\u540E\u603B\u7ED3", \u624B\u5DE5: "\u624B\u5DE5" }[o] || o || "\u542C\u8BB0";
   }
   function lastSyncLabel(st) {
     if (!st || !st.last) return "";
@@ -7475,7 +7485,7 @@
   function syncProgressLabel(st) {
     const p = st && st.progress;
     if (!p) return "";
-    if (p.phase === "list") return "\u6B63\u5728\u5217\u51FA\u542C\u8BB0\u2026";
+    if (p.phase === "list") return p.provider === "feishu" ? "\u6B63\u5728\u5217\u51FA\u98DE\u4E66\u5999\u8BB0\u2026" : p.provider === "tencent" ? "\u6B63\u5728\u5217\u51FA\u817E\u8BAF\u5F55\u5236\u2026" : "\u6B63\u5728\u5217\u51FA\u542C\u8BB0\u2026";
     if (p.phase === "index") return "\u6B63\u5728\u5EFA\u7ACB\u7D22\u5F15\u2026";
     if (p.phase === "pull" && p.total) {
       const n = (p.current || 0) + "/" + p.total;
@@ -8077,7 +8087,7 @@
         return;
       }
       if (next === prev) return;
-      const shared = d && d.source === "shared";
+      const shared = d && d.source === "shared" && (!d.provider || d.provider === "dingtalk");
       const writebackOn = d && d.writebackEnabled !== false;
       if (shared && writebackOn && !(opts && opts.sharedTitleDecided)) {
         titleOnlyRef.current = true;
@@ -8098,7 +8108,7 @@
     const saveEdit = (opts) => {
       if (saving) return;
       const titleChanged = String(title).trim() !== String(d && d.title || "");
-      const shared = d && d.source === "shared";
+      const shared = d && d.source === "shared" && (!d.provider || d.provider === "dingtalk");
       const writebackOn = d && d.writebackEnabled !== false;
       if (titleChanged && shared && writebackOn && !(opts && opts.sharedTitleDecided)) {
         titleOnlyRef.current = false;
@@ -8202,7 +8212,8 @@
       setAddingTag(false);
     };
     const removeLocal = () => setConfirmDel(true);
-    const canRefresh = d && d.source !== "import" && !String(uuid || "").startsWith("import-");
+    const canRefresh = d && d.canRefresh !== false && d.provider !== "import" && d.source !== "import" && !String(uuid || "").startsWith("import-");
+    const fromLabel = d && d.providerLabel || "\u6765\u6E90";
     const doRefresh = () => {
       if (refreshBusy) return;
       setRefreshBusy(true);
@@ -8219,12 +8230,12 @@
         setScope(r && (r.type || r.scope) || "");
         setProjectName(r && r.projectName || "");
         setTags(r && r.tags || []);
-        toast(r && r.refresh && r.refresh.message || "\u5DF2\u4ECE\u9489\u9489\u91CD\u62C9");
+        toast(r && r.refresh && r.refresh.message || "\u5DF2\u4ECE" + fromLabel + "\u91CD\u62C9");
         if (onChanged) onChanged();
       }).catch((err2) => {
         const msg = String(err2 && err2.message || err2);
         if (/timeout|timed out|TimeoutError/i.test(msg)) {
-          toast("\u8FD8\u5728\u4ECE\u9489\u9489\u62C9\uFF0C\u8BF7\u7B49\u51E0\u5206\u949F\u518D\u70B9\u8FD9\u573A\u4F1A\u3002\u5148\u4E0D\u8981\u53CD\u590D\u5237\u65B0\u7F51\u9875\u3002");
+          toast("\u8FD8\u5728\u4ECE" + fromLabel + "\u62C9\uFF0C\u8BF7\u7B49\u51E0\u5206\u949F\u518D\u70B9\u8FD9\u573A\u4F1A\u3002\u5148\u4E0D\u8981\u53CD\u590D\u5237\u65B0\u7F51\u9875\u3002");
         } else {
           toast(msg);
         }
@@ -8489,7 +8500,7 @@
       }
       return items;
     })();
-    const bodyHint = editingBody === "transcript" ? "\u884C\u9996\u3010\u59D3\u540D\u3011\u5C3D\u91CF\u4FDD\u7559\uFF0C\u751F\u6210\u603B\u7ED3\u8FD8\u9760\u5B83\u3002" : editingBody === "record" ? d.writebackEnabled === false ? "\u53EA\u4FDD\u5B58\u5728\u672C\u673A\uFF0C\u5199\u56DE\u9489\u9489\u5DF2\u5173\u95ED\u3002" : "\u4FDD\u5B58\u540E\u4F1A\u5199\u56DE\u9489\u9489\u542C\u8BB0\u7EAA\u8981\u3002\u6CA1\u6709\u7F16\u8F91\u6743\u6216\u5BFC\u5165\u573A\u6B21\u53EA\u6539\u672C\u673A\u3002" : editingBody === "deep" ? "\u53EA\u4FDD\u5B58\u5728\u672C\u673A\uFF0C\u4E0D\u5199\u56DE\u9489\u9489\u3002" : sub === "record" && d.summaryEdited ? "\u672C\u673A\u6539\u8FC7\uFF0C\u542C\u8BB0\u518D\u62C9\u4E5F\u4E0D\u4F1A\u76D6\u6389\u3002" : sub === "transcript" && d.transcriptEdited ? "\u672C\u673A\u6539\u8FC7\uFF0C\u542C\u8BB0\u518D\u62C9\u4E5F\u4E0D\u4F1A\u76D6\u6389\u3002" : "";
+    const bodyHint = editingBody === "transcript" ? "\u884C\u9996\u3010\u59D3\u540D\u3011\u5C3D\u91CF\u4FDD\u7559\uFF0C\u751F\u6210\u603B\u7ED3\u8FD8\u9760\u5B83\u3002" : editingBody === "record" ? d.writebackEnabled === false ? "\u53EA\u4FDD\u5B58\u5728\u672C\u673A\uFF0C\u5199\u56DE\u5DF2\u5173\u95ED\u3002" : d.writebackCapable === false ? "\u53EA\u4FDD\u5B58\u5728\u672C\u673A\uFF0C\u8FD9\u4E2A\u6765\u6E90\u4E0D\u652F\u6301\u5199\u56DE\u3002" : "\u4FDD\u5B58\u540E\u4F1A\u5199\u56DE" + fromLabel + "\u7EAA\u8981\u3002\u6CA1\u6709\u7F16\u8F91\u6743\u6216\u5BFC\u5165\u573A\u6B21\u53EA\u6539\u672C\u673A\u3002" : editingBody === "deep" ? "\u53EA\u4FDD\u5B58\u5728\u672C\u673A\uFF0C\u4E0D\u5199\u56DE\u6765\u6E90\u3002" : sub === "record" && d.summaryEdited ? "\u672C\u673A\u6539\u8FC7\uFF0C\u542C\u8BB0\u518D\u62C9\u4E5F\u4E0D\u4F1A\u76D6\u6389\u3002" : sub === "transcript" && d.transcriptEdited ? "\u672C\u673A\u6539\u8FC7\uFF0C\u542C\u8BB0\u518D\u62C9\u4E5F\u4E0D\u4F1A\u76D6\u6389\u3002" : "";
     return e2(
       "div",
       null,
@@ -8509,7 +8520,7 @@
           editing ? e2("input", { type: "text", style: { marginTop: 8 }, value: attendees, onChange: (ev) => setAttendees(ev.target.value), placeholder: "\u53C2\u4F1A\u4EBA" }) : e2(
             "p",
             { className: "meta-line" },
-            [fmtDateTime(d.startTime), d.attendees, srcLabel(d.source), synced ? companyMark(d) : "", personal ? "\u4E2A\u4EBA\u4E0D\u4E0A\u4F20" : ""].filter(Boolean).join(" \xB7 ")
+            [fmtDateTime(d.startTime), d.attendees, srcLabel(d.source, d.provider), synced ? companyMark(d) : "", personal ? "\u4E2A\u4EBA\u4E0D\u4E0A\u4F20" : ""].filter(Boolean).join(" \xB7 ")
           ),
           tagRow
         ),
@@ -8610,7 +8621,7 @@
       ),
       confirmDel ? e2(ConfirmSheet, {
         title: "\u4ECE\u672C\u673A\u79FB\u9664",
-        lede: "\u53EA\u5220\u672C\u673A\u5217\u8868\u91CC\u7684\u8FD9\u573A\u4F1A\u3002\u9489\u9489\u542C\u8BB0\u8FD8\u5728\u3002\u672C\u573A\u8BB0\u5F55\u3001\u9010\u5B57\u7A3F\u3001\u603B\u7ED3\u548C\u5F85\u529E\u90FD\u4F1A\u4ECE\u672C\u673A\u53BB\u6389\uFF0C\u4EE5\u540E\u66F4\u65B0\u4E5F\u4E0D\u4F1A\u518D\u62C9\u56DE\u6765\u3002",
+        lede: "\u53EA\u5220\u672C\u673A\u5217\u8868\u91CC\u7684\u8FD9\u573A\u4F1A\u3002\u5BF9\u65B9\u542C\u8BB0\u8FD8\u5728\u3002\u672C\u573A\u8BB0\u5F55\u3001\u9010\u5B57\u7A3F\u3001\u603B\u7ED3\u548C\u5F85\u529E\u90FD\u4F1A\u4ECE\u672C\u673A\u53BB\u6389\uFF0C\u4EE5\u540E\u66F4\u65B0\u4E5F\u4E0D\u4F1A\u518D\u62C9\u56DE\u6765\u3002",
         confirmLabel: "\u5220\u9664",
         danger: true,
         busy: delBusy,
@@ -8620,8 +8631,8 @@
         }
       }) : null,
       confirmRefresh ? e2(ConfirmSheet, {
-        title: "\u4ECE\u9489\u9489\u91CD\u62C9",
-        lede: refreshBusy ? "\u6B63\u5728\u4ECE\u9489\u9489\u62C9\u6807\u9898\u3001\u8BB0\u5F55\u548C\u9010\u5B57\u7A3F\u3002\u957F\u4F1A\u53EF\u80FD\u8981\u51E0\u5206\u949F\u3002\u8BF7\u7B49\u63D0\u793A\u300C\u5DF2\u4ECE\u9489\u9489\u91CD\u62C9\u300D\uFF0C\u5148\u4E0D\u8981\u5237\u65B0\u7F51\u9875\u3002" : "\u7528\u9489\u9489\u6700\u65B0\u7684\u6807\u9898\u3001\u8BB0\u5F55\u3001\u9010\u5B57\u7A3F\u548C\u5F85\u529E\u8986\u76D6\u672C\u673A\u3002\u672C\u673A\u624B\u6539\u8FC7\u7684\u8BB0\u5F55\u3001\u9010\u5B57\u7A3F\u4E0D\u8986\u76D6\u3002\u672C\u673A\u603B\u7ED3\u3001\u7C7B\u578B\u3001\u9879\u76EE\u3001\u6807\u7B7E\u548C\u662F\u5426\u4E0A\u4F20\u90FD\u4E0D\u53D8\u3002\u957F\u4F1A\u53EF\u80FD\u8981\u51E0\u5206\u949F\uFF0C\u62C9\u5B8C\u524D\u8BF7\u4E0D\u8981\u5237\u65B0\u7F51\u9875\u3002",
+        title: "\u4ECE" + fromLabel + "\u91CD\u62C9",
+        lede: refreshBusy ? "\u6B63\u5728\u4ECE" + fromLabel + "\u62C9\u6807\u9898\u3001\u8BB0\u5F55\u548C\u9010\u5B57\u7A3F\u3002\u957F\u4F1A\u53EF\u80FD\u8981\u51E0\u5206\u949F\u3002\u8BF7\u7B49\u63D0\u793A\u5DF2\u91CD\u62C9\uFF0C\u5148\u4E0D\u8981\u5237\u65B0\u7F51\u9875\u3002" : "\u7528" + fromLabel + "\u6700\u65B0\u7684\u6807\u9898\u3001\u8BB0\u5F55\u3001\u9010\u5B57\u7A3F\u548C\u5F85\u529E\u8986\u76D6\u672C\u673A\u3002\u672C\u673A\u624B\u6539\u8FC7\u7684\u8BB0\u5F55\u3001\u9010\u5B57\u7A3F\u4E0D\u8986\u76D6\u3002\u672C\u673A\u603B\u7ED3\u3001\u7C7B\u578B\u3001\u9879\u76EE\u3001\u6807\u7B7E\u548C\u662F\u5426\u4E0A\u4F20\u90FD\u4E0D\u53D8\u3002\u957F\u4F1A\u53EF\u80FD\u8981\u51E0\u5206\u949F\uFF0C\u62C9\u5B8C\u524D\u8BF7\u4E0D\u8981\u5237\u65B0\u7F51\u9875\u3002",
         confirmLabel: "\u91CD\u62C9",
         busyLabel: "\u91CD\u62C9\u4E2D\u2026",
         busy: refreshBusy,
@@ -8632,7 +8643,7 @@
       }) : null,
       confirmDeep ? e2(ConfirmSheet, {
         title: "\u91CD\u65B0\u751F\u6210\u603B\u7ED3",
-        lede: "\u4F1A\u8986\u76D6\u672C\u673A\u5DF2\u4FDD\u5B58\u7684\u603B\u7ED3\uFF0C\u5305\u62EC\u4F60\u6539\u8FC7\u7684\u5185\u5BB9\u3002\u9489\u9489\u542C\u8BB0\u4E0D\u4F1A\u6539\u3002",
+        lede: "\u4F1A\u8986\u76D6\u672C\u673A\u5DF2\u4FDD\u5B58\u7684\u603B\u7ED3\uFF0C\u5305\u62EC\u4F60\u6539\u8FC7\u7684\u5185\u5BB9\u3002\u6765\u6E90\u4FA7\u542C\u8BB0\u4E0D\u4F1A\u6539\u3002",
         confirmLabel: "\u91CD\u65B0\u751F\u6210",
         onConfirm: runDeep,
         onClose: () => setConfirmDeep(false)
@@ -8805,7 +8816,7 @@
     };
     return e2(
       SheetFrame,
-      { title: "\u5BFC\u5165", lede: "\u4E0D\u662F\u9489\u9489\u542C\u8BB0\u7684\u7EAA\u8981\uFF0C\u8D34\u8FDB\u6765\u6210\u4E3A\u4E00\u573A\u4F1A\u8BAE\u3002\u4EE5\u540E\u98DE\u4E66\u7B49\u6765\u6E90\u4F1A\u548C\u9489\u9489\u4E00\u6837\u8D70\u300C\u66F4\u65B0\u300D\u3002", onClose: props.onClose },
+      { title: "\u5BFC\u5165", lede: "\u628A\u4E0D\u662F\u4ECE\u542C\u8BB0\u540C\u6B65\u6765\u7684\u7EAA\u8981\u8D34\u8FDB\u6765\uFF0C\u6210\u4E3A\u4E00\u573A\u672C\u673A\u4F1A\u8BAE\u3002\u9489\u9489\u3001\u98DE\u4E66\u3001\u817E\u8BAF\u8BF7\u5230\u5217\u8868\u70B9\u300C\u66F4\u65B0\u300D\u3002", onClose: props.onClose },
       e2("textarea", { className: "paste", placeholder: "\u7C98\u8D34\u7EAA\u8981\u6216\u8F6C\u5199", value: body, onChange: (ev) => setBody(ev.target.value) }),
       e2(
         "div",
@@ -8838,6 +8849,7 @@
     const [moreBusy, setMoreBusy] = (0, import_react3.useState)(false);
     const [meetFilter, setMeetFilter] = (0, import_react3.useState)("all");
     const [meetType, setMeetType] = (0, import_react3.useState)("");
+    const [meetProvider, setMeetProvider] = (0, import_react3.useState)("");
     const [meetTag, setMeetTag] = (0, import_react3.useState)("");
     const [meetQuery, setMeetQuery] = (0, import_react3.useState)("");
     const [askQ, setAskQ] = (0, import_react3.useState)("");
@@ -8861,6 +8873,7 @@
         q: qDebounced,
         tag: meetTag,
         type: meetType,
+        provider: meetProvider,
         filter: meetFilter === "company" ? "company" : "",
         cursor,
         limit: MEET_PAGE
@@ -8878,7 +8891,7 @@
       }).finally(() => {
         if (append) setMoreBusy(false);
       });
-    }, [qDebounced, meetTag, meetType, meetFilter]);
+    }, [qDebounced, meetTag, meetType, meetFilter, meetProvider]);
     (0, import_react3.useEffect)(() => {
       fetchPage();
     }, [fetchPage, tick]);
@@ -8888,8 +8901,8 @@
       const apply = (r, fromPoll) => {
         if (stop || !r) return;
         setSt((prev) => {
-          if (!fromPoll || !prev) return r.dws ? r : { ...r, dws: prev && prev.dws || r.dws };
-          return { ...prev, ...r, dws: prev.dws || r.dws };
+          if (!fromPoll || !prev) return r.sources ? r : { ...r, dws: prev && prev.dws || r.dws, sources: prev && prev.sources || r.sources };
+          return { ...prev, ...r, dws: prev.dws || r.dws, sources: prev.sources || r.sources };
         });
         if (r.syncing) setSyncing(true);
         else if (fromPoll && expectSync.current) {
@@ -9005,20 +9018,31 @@
     if (!items) return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "pane", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { className: "empty", children: "\u52A0\u8F7D\u4E2D\u2026" }) });
     const currentId = selected || items[0] && items[0].taskUuid;
     const months = groupMonths(items);
-    const dws = st && st.dws || {};
+    const sources = st && st.sources || {};
+    const logged = ["dingtalk", "feishu", "tencent"].filter((id) => sources[id] && sources[id].authenticated);
+    const loggedLabel = logged.map((id) => {
+      const s = sources[id];
+      return (s.label || id) + (s.user ? "\xB7" + s.user : "");
+    }).join(" / ");
     const linkMap = askHits.reduce((m, h) => {
       if (h.title) m[h.title] = h.taskUuid;
       return m;
     }, {});
     const remain = Math.max(0, total - items.length);
+    const doLogin = () => {
+      const first = ["dingtalk", "feishu", "tencent"].find((id) => sources[id] && !sources[id].authenticated) || "dingtalk";
+      api("/api/sources/login", { provider: first }).then((r) => {
+        toast(r && r.message || "\u8BF7\u6309\u63D0\u793A\u5B8C\u6210\u767B\u5F55");
+      }).catch((er) => toast(String(er && er.message || er)));
+    };
     return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "split-2", children: [
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "pane", children: [
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("h1", { children: "\u4F1A\u8BAE" }),
         /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "intake", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "intake-st", title: lastSyncTitle(st) || void 0, children: dws.authenticated ? "\u9489\u9489 \xB7 " + (dws.user || "") + (pulling ? " \xB7 " + (syncProgressLabel(st) || "\u66F4\u65B0\u4E2D") : lastSyncLabel(st) ? " \xB7 " + lastSyncLabel(st) : " \xB7 \u8FD8\u6CA1\u66F4\u65B0\u8FC7") : dws.error ? "\u9489\u9489\u72B6\u6001\u672A\u77E5" : "\u9489\u9489\u672A\u767B\u5F55" }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "intake-st", title: lastSyncTitle(st) || void 0, children: pulling ? syncProgressLabel(st) || "\u66F4\u65B0\u4E2D" : logged.length ? loggedLabel + (lastSyncLabel(st) ? " \xB7 " + lastSyncLabel(st) : " \xB7 \u8FD8\u6CA1\u66F4\u65B0\u8FC7") : "\u542C\u8BB0\u6765\u6E90\u672A\u767B\u5F55" }),
           /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "tools", children: [
             /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "quiet", onClick: doSync, disabled: pulling, children: pulling ? "\u66F4\u65B0\u4E2D" : "\u66F4\u65B0" }),
-            dws.authenticated ? null : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "quiet", onClick: () => toast(dws.error ? "\u672C\u673A\u5DF2\u88C5 DWS\uFF0C\u82E5\u5DF2\u767B\u5F55\u53EF\u76F4\u63A5\u70B9\u66F4\u65B0" : "\u8BF7\u5728\u672C\u673A\u7EC8\u7AEF\u6267\u884C dws auth login\uFF0C\u5B8C\u6210\u540E\u70B9\u66F4\u65B0"), children: "\u767B\u5F55" }),
+            logged.length ? null : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "quiet", onClick: doLogin, children: "\u767B\u5F55" }),
             /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "quiet", onClick: () => setShowImport(true), children: "\u5BFC\u5165" })
           ] })
         ] }),
@@ -9045,11 +9069,12 @@
           /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
             "button",
             {
-              className: "meet-filter" + (meetFilter === "all" && !meetTag && !meetType ? " on" : ""),
+              className: "meet-filter" + (meetFilter === "all" && !meetTag && !meetType && !meetProvider ? " on" : ""),
               onClick: () => {
                 setMeetFilter("all");
                 setMeetTag("");
                 setMeetType("");
+                setMeetProvider("");
               },
               children: "\u5168\u90E8"
             }
@@ -9062,6 +9087,15 @@
               children: "\u5DF2\u5230\u516C\u53F8"
             }
           ),
+          PROVIDERS.map((p) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+            "button",
+            {
+              className: "meet-filter" + (meetProvider === p.id ? " on" : ""),
+              onClick: () => setMeetProvider(meetProvider === p.id ? "" : p.id),
+              children: p.label
+            },
+            p.id
+          )),
           MEETING_TYPES.map((t) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
             "button",
             {
@@ -9095,7 +9129,7 @@
               onClick: () => setSelected(x.taskUuid),
               children: [
                 /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "t", children: x.title }),
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "meta", children: [fmtShort(x.time), srcLabel(x.source), x.projectName || (x.tags || [])[0], companyMark(x)].filter(Boolean).join(" \xB7 ") })
+                /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "meta", children: [fmtShort(x.time), srcLabel(x.source, x.provider), x.projectName || (x.tags || [])[0], companyMark(x)].filter(Boolean).join(" \xB7 ") })
               ]
             },
             x.taskUuid
@@ -9565,7 +9599,7 @@
         ConfirmSheet,
         {
           title: "\u5220\u9664\u5F85\u529E",
-          lede: "\u4ECE\u672C\u673A\u53F0\u8D26\u53BB\u6389\u300C" + current.title + "\u300D\u3002\u9489\u9489\u91CC\u7684\u5F85\u529E\u4E0D\u4F1A\u52A8\u3002",
+          lede: "\u4ECE\u672C\u673A\u53F0\u8D26\u53BB\u6389\u300C" + current.title + "\u300D\u3002\u6765\u6E90\u4FA7\u7684\u5F85\u529E\u4E0D\u4F1A\u52A8\u3002",
           confirmLabel: "\u5220\u9664",
           danger: true,
           busy: delBusy,
@@ -9727,7 +9761,11 @@
         if (tab === "logs") api("/api/logs?limit=200").then((r) => setLogs(r.items || [])).catch(() => {
         });
         api("/api/sync-status?meta=1").then((r) => {
-          setSyncSt(r);
+          setSyncSt((prev) => ({
+            ...r || {},
+            sources: r && r.sources && Object.keys(r.sources).length ? r.sources : prev && prev.sources || {},
+            dws: r && r.dws || prev && prev.dws
+          }));
           if (!waitSync.current || !r || r.syncing) return;
           const lastAt = r.last && r.last.at || 0;
           if (lastAt < syncStartedAt.current) return;
@@ -9871,7 +9909,7 @@
       setWritebackBusy(true);
       api("/api/settings", { writeback: { enabled } }).then((r) => {
         apply(r);
-        toast(enabled ? "\u5199\u56DE\u9489\u9489\u5DF2\u6253\u5F00" : "\u5199\u56DE\u9489\u9489\u5DF2\u5173\u95ED");
+        toast(enabled ? "\u5199\u56DE\u5DF2\u6253\u5F00" : "\u5199\u56DE\u5DF2\u5173\u95ED");
       }).catch((er) => toast(String(er && er.message || er))).finally(() => setWritebackBusy(false));
     };
     const setMcp = (body) => {
@@ -10238,27 +10276,48 @@
     ] });
     const pulling = syncBusy || !!(syncSt && syncSt.syncing);
     const writeback = st.writeback || { enabled: true };
+    const sourceMap = syncSt && syncSt.sources || {};
+    const sourceCards = [
+      { id: "dingtalk", label: "\u9489\u9489", hint: "\u626B\u7801\u767B\u5F55\u540E\u62C9 AI \u542C\u8BB0\u3002\u53EF\u5199\u56DE\u6807\u9898\u548C\u8BB0\u5F55\u3002", install: "npm \u4F1A\u968F\u5B89\u88C5\u811A\u672C\u88C5 dws" },
+      { id: "feishu", label: "\u98DE\u4E66", hint: "\u8981\u8FC7\u4E24\u9875\uFF1A\u5148\u521B\u5EFA\u5E94\u7528\uFF0C\u518D\u6388\u6743\u5999\u8BB0\u3002\u53EF\u5199\u56DE\u6807\u9898\u548C\u603B\u7ED3\u3002", install: "npm install -g @larksuite/cli" },
+      { id: "tencent", label: "\u817E\u8BAF\u4F1A\u8BAE", hint: "\u626B\u7801\u767B\u5F55\u540E\u62C9\u5F55\u5236\u667A\u80FD\u7EAA\u8981\u548C\u5143\u5B9D\u7EAA\u8981\u3002\u53EA\u8BFB\uFF0C\u4E0D\u5199\u56DE\u3002", install: "npm install -g @tencentcloud/tmeet" }
+    ];
+    const loginSource = (id) => {
+      api("/api/sources/login", { provider: id }).then((r) => {
+        toast(r && r.message || "\u8BF7\u5B8C\u6210\u6388\u6743");
+      }).catch((er) => toast(String(er && er.message || er)));
+    };
     const syncPane = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "page-inner", children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h1", { children: "\u542C\u8BB0" }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: "\u4ECE\u9489\u9489\u62C9\u5230\u672C\u673A\uFF0C\u548C\u628A\u672C\u673A\u6539\u52A8\u5199\u56DE\u9489\u9489\uFF0C\u662F\u4E24\u4EF6\u4E8B\u3002" }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: "\u9489\u9489\u3001\u98DE\u4E66\u3001\u817E\u8BAF\u8C01\u767B\u5F55\u4E86\u5C31\u62C9\u8C01\u3002\u5199\u56DE\u53EA\u4F5C\u7528\u4E8E\u652F\u6301\u6539\u6807\u9898/\u7EAA\u8981\u7684\u6765\u6E90\u3002" }),
+      sourceCards.map((card) => {
+        const s = sourceMap[card.id] || {};
+        return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "block", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h3", { children: card.label }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: card.hint }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "status", children: s.authenticated ? "\u5DF2\u767B\u5F55" + (s.user ? " \xB7 " + s.user : "") : s.error || "\u672A\u767B\u5F55" }),
+          s.authenticated ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { className: "quiet", onClick: () => loginSource(card.id), children: "\u767B\u5F55" }),
+          !s.authenticated && /未安装/.test(s.error || "") ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: card.install }) : null
+        ] }, card.id);
+      }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "block", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h3", { children: "\u5199\u56DE\u9489\u9489" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: "\u4FDD\u5B58\u6807\u9898\u548C\u300C\u8BB0\u5F55\u300D\uFF08\u9489\u9489\u7EAA\u8981\uFF09\u65F6\uFF0C\u662F\u5426\u6539\u5BF9\u5E94\u542C\u8BB0\u3002\u5173\u95ED\u540E\u53EA\u6539\u672C\u673A\u3002\u5F85\u529E\u3001\u9010\u5B57\u7A3F\u3001\u672C\u673A\u603B\u7ED3\u4E0D\u4F1A\u5199\u56DE\u3002" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h3", { children: "\u5199\u56DE\u6765\u6E90" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: "\u6253\u5F00\u540E\uFF0C\u4FDD\u5B58\u6807\u9898\u548C\u300C\u8BB0\u5F55\u300D\u65F6\u4F1A\u5C3D\u91CF\u5199\u56DE\u9489\u9489\u6216\u98DE\u4E66\u3002\u817E\u8BAF\u4F1A\u8BAE\u548C\u5BFC\u5165\u573A\u6B21\u53EA\u6539\u672C\u673A\u3002\u5F85\u529E\u3001\u9010\u5B57\u7A3F\u3001\u672C\u673A\u603B\u7ED3\u4E0D\u4F1A\u5199\u56DE\u3002" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "filters", children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { className: writeback.enabled ? "on" : "", disabled: writebackBusy, onClick: () => setWriteback(true), children: "\u6253\u5F00" }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { className: !writeback.enabled ? "on" : "", disabled: writebackBusy, onClick: () => setWriteback(false), children: "\u5173\u95ED" })
         ] })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "block", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h3", { children: "\u4ECE\u9489\u9489\u540C\u6B65" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: "\u5217\u8868\u4E0A\u7684\u300C\u66F4\u65B0\u300D\u53EA\u62C9\u672C\u673A\u8FD8\u6CA1\u6709\u7684\uFF0C\u6700\u591A 300 \u573A\u3002\u5168\u91CF\u4F1A\u628A\u5C1A\u672A\u5165\u5E93\u7684\u90FD\u62C9\u5B8C\uFF0C\u53EF\u80FD\u8981\u8F83\u4E45\uFF0C\u4F46\u5728\u540E\u53F0\u8DD1\uFF0C\u7F51\u9875\u53EF\u4EE5\u7EE7\u7EED\u7528\u3002" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h3", { children: "\u540C\u6B65" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: "\u5217\u8868\u300C\u66F4\u65B0\u300D\u53EA\u62C9\u672C\u673A\u8FD8\u6CA1\u6709\u7684\uFF0C\u6BCF\u4E2A\u6765\u6E90\u6700\u591A 300 \u573A\u3002\u5168\u91CF\u4F1A\u628A\u5C1A\u672A\u5165\u5E93\u7684\u90FD\u62C9\u5B8C\uFF0C\u672A\u767B\u5F55\u7684\u6765\u6E90\u4F1A\u8DF3\u8FC7\u3002" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "status", children: pulling ? syncProgressLabel(syncSt) || "\u540C\u6B65\u4E2D\u2026\u9875\u9762\u53EF\u7EE7\u7EED\u7528" : lastSyncLabel(syncSt) ? "\u4E0A\u6B21\uFF1A" + lastSyncLabel(syncSt) : "\u8FD8\u6CA1\u540C\u6B65\u8FC7" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { className: "primary", disabled: pulling, onClick: () => setConfirmFull(true), children: pulling ? "\u540C\u6B65\u4E2D\u2026" : "\u5168\u91CF\u540C\u6B65" }),
         confirmFull ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
           ConfirmSheet,
           {
             title: "\u5168\u91CF\u540C\u6B65\u542C\u8BB0",
-            lede: "\u4ECE\u9489\u9489\u628A\u672C\u673A\u8FD8\u6CA1\u6709\u7684\u542C\u8BB0\u90FD\u62C9\u4E0B\u6765\u3002\u5DF2\u5728\u672C\u673A\u7684\u4E0D\u8986\u76D6\u4F60\u6539\u8FC7\u7684\u8BB0\u5F55\u548C\u9010\u5B57\u7A3F\uFF1B\u672C\u673A\u5220\u8FC7\u7684\u4E0D\u4F1A\u518D\u56DE\u6765\u3002\u9489\u9489\u672A\u767B\u5F55\u4F1A\u5931\u8D25\u3002",
+            lede: "\u4ECE\u5DF2\u767B\u5F55\u7684\u9489\u9489\u3001\u98DE\u4E66\u3001\u817E\u8BAF\u628A\u672C\u673A\u8FD8\u6CA1\u6709\u7684\u542C\u8BB0\u90FD\u62C9\u4E0B\u6765\u3002\u5DF2\u5728\u672C\u673A\u7684\u4E0D\u8986\u76D6\u4F60\u6539\u8FC7\u7684\u8BB0\u5F55\u548C\u9010\u5B57\u7A3F\uFF1B\u672C\u673A\u5220\u8FC7\u7684\u4E0D\u4F1A\u518D\u56DE\u6765\u3002\u672A\u767B\u5F55\u7684\u6765\u6E90\u4F1A\u8DF3\u8FC7\u3002",
             confirmLabel: "\u5F00\u59CB\u5168\u91CF",
             busy: pulling,
             onConfirm: doFullSync,

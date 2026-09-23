@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { api, qs } from './api.js'
 import {
-  MEET_PAGE, MEETING_TYPES, companyMark, fmtShort, groupMonths, lastSyncLabel, lastSyncTitle, srcLabel, syncProgressLabel,
+  MEET_PAGE, MEETING_TYPES, PROVIDERS, companyMark, fmtShort, groupMonths, lastSyncLabel, lastSyncTitle, srcLabel, syncProgressLabel,
 } from './format.js'
 import { Md, useDebounced } from './ui.jsx'
 import { ImportSheet, MeetingDetail } from './meeting-detail.jsx'
@@ -17,6 +17,7 @@ export function MeetPage(props) {
   const [moreBusy, setMoreBusy] = useState(false)
   const [meetFilter, setMeetFilter] = useState('all')
   const [meetType, setMeetType] = useState('')
+  const [meetProvider, setMeetProvider] = useState('')
   const [meetTag, setMeetTag] = useState('')
   const [meetQuery, setMeetQuery] = useState('')
   const [askQ, setAskQ] = useState('')
@@ -41,6 +42,7 @@ export function MeetPage(props) {
       q: qDebounced,
       tag: meetTag,
       type: meetType,
+      provider: meetProvider,
       filter: meetFilter === 'company' ? 'company' : '',
       cursor,
       limit: MEET_PAGE,
@@ -56,7 +58,7 @@ export function MeetPage(props) {
       if (!append) setErr(String(er && er.message || er))
       else toast(String(er && er.message || er))
     }).finally(() => { if (append) setMoreBusy(false) })
-  }, [qDebounced, meetTag, meetType, meetFilter])
+  }, [qDebounced, meetTag, meetType, meetFilter, meetProvider])
 
   useEffect(() => { fetchPage() }, [fetchPage, tick])
   useEffect(() => {
@@ -65,8 +67,8 @@ export function MeetPage(props) {
     const apply = (r, fromPoll) => {
       if (stop || !r) return
       setSt((prev) => {
-        if (!fromPoll || !prev) return r.dws ? r : { ...r, dws: (prev && prev.dws) || r.dws }
-        return { ...prev, ...r, dws: prev.dws || r.dws }
+        if (!fromPoll || !prev) return r.sources ? r : { ...r, dws: (prev && prev.dws) || r.dws, sources: (prev && prev.sources) || r.sources }
+        return { ...prev, ...r, dws: prev.dws || r.dws, sources: prev.sources || r.sources }
       })
       if (r.syncing) setSyncing(true)
       else if (fromPoll && expectSync.current) {
@@ -165,9 +167,20 @@ export function MeetPage(props) {
 
   const currentId = selected || (items[0] && items[0].taskUuid)
   const months = groupMonths(items)
-  const dws = (st && st.dws) || {}
+  const sources = (st && st.sources) || {}
+  const logged = ['dingtalk', 'feishu', 'tencent'].filter((id) => sources[id] && sources[id].authenticated)
+  const loggedLabel = logged.map((id) => {
+    const s = sources[id]
+    return (s.label || id) + (s.user ? ('·' + s.user) : '')
+  }).join(' / ')
   const linkMap = askHits.reduce((m, h) => { if (h.title) m[h.title] = h.taskUuid; return m }, {})
   const remain = Math.max(0, total - items.length)
+  const doLogin = () => {
+    const first = ['dingtalk', 'feishu', 'tencent'].find((id) => sources[id] && !sources[id].authenticated) || 'dingtalk'
+    api('/api/sources/login', { provider: first }).then((r) => {
+      toast((r && r.message) || '请按提示完成登录')
+    }).catch((er) => toast(String(er && er.message || er)))
+  }
 
   return (
     <div className="split-2">
@@ -175,17 +188,17 @@ export function MeetPage(props) {
         <h1>会议</h1>
         <div className="intake">
           <span className="intake-st" title={lastSyncTitle(st) || undefined}>
-            {dws.authenticated
-              ? ('钉钉 · ' + (dws.user || '') + (pulling
-                ? (' · ' + (syncProgressLabel(st) || '更新中'))
-                : (lastSyncLabel(st) ? ' · ' + lastSyncLabel(st) : ' · 还没更新过')))
-              : (dws.error ? '钉钉状态未知' : '钉钉未登录')}
+            {pulling
+              ? (syncProgressLabel(st) || '更新中')
+              : (logged.length
+                ? (loggedLabel + (lastSyncLabel(st) ? ' · ' + lastSyncLabel(st) : ' · 还没更新过'))
+                : '听记来源未登录')}
           </span>
           <div className="tools">
             <button className="quiet" onClick={doSync} disabled={pulling}>{pulling ? '更新中' : '更新'}</button>
-            {dws.authenticated
+            {logged.length
               ? null
-              : <button className="quiet" onClick={() => toast(dws.error ? '本机已装 DWS，若已登录可直接点更新' : '请在本机终端执行 dws auth login，完成后点更新')}>登录</button>}
+              : <button className="quiet" onClick={doLogin}>登录</button>}
             <button className="quiet" onClick={() => setShowImport(true)}>导入</button>
           </div>
         </div>
@@ -207,13 +220,20 @@ export function MeetPage(props) {
         {askA ? <div className="ans"><Md text={askA} linkMap={linkMap} onMeetingClick={(id) => id && setSelected(id)} /></div> : null}
         <div className="filters">
           <button
-            className={'meet-filter' + (meetFilter === 'all' && !meetTag && !meetType ? ' on' : '')}
-            onClick={() => { setMeetFilter('all'); setMeetTag(''); setMeetType('') }}
+            className={'meet-filter' + (meetFilter === 'all' && !meetTag && !meetType && !meetProvider ? ' on' : '')}
+            onClick={() => { setMeetFilter('all'); setMeetTag(''); setMeetType(''); setMeetProvider('') }}
           >全部</button>
           <button
             className={'meet-filter' + (meetFilter === 'company' ? ' on' : '')}
             onClick={() => setMeetFilter(meetFilter === 'company' ? 'all' : 'company')}
           >已到公司</button>
+          {PROVIDERS.map((p) => (
+            <button
+              key={p.id}
+              className={'meet-filter' + (meetProvider === p.id ? ' on' : '')}
+              onClick={() => setMeetProvider(meetProvider === p.id ? '' : p.id)}
+            >{p.label}</button>
+          ))}
           {MEETING_TYPES.map((t) => (
             <button
               key={t}
@@ -248,7 +268,7 @@ export function MeetPage(props) {
                 >
                   <div className="t">{x.title}</div>
                   <div className="meta">
-                    {[fmtShort(x.time), srcLabel(x.source), x.projectName || (x.tags || [])[0], companyMark(x)].filter(Boolean).join(' · ')}
+                    {[fmtShort(x.time), srcLabel(x.source, x.provider), x.projectName || (x.tags || [])[0], companyMark(x)].filter(Boolean).join(' · ')}
                   </div>
                 </div>
               ))}
