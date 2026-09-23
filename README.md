@@ -22,7 +22,7 @@
 ## 每台电脑需要什么
 
 1. **macOS 或 Windows**
-2. **Node.js ≥ 22.5**（[nodejs.org](https://nodejs.org) LTS）。安装脚本在 Mac 上会尝试用 Homebrew 安装，在 Windows 上会尝试用 winget 安装。
+2. **Node.js ≥ 22.5**（[nodejs.org](https://nodejs.org) LTS）。Mac 安装脚本没有 Homebrew 时会下载官方安装包并打开；Windows 会尝试用 winget。同事也可以自己打开官网安装 LTS 后再跑安装脚本。
 3. **钉钉 DWS CLI**：脚本会自动安装并弹出扫码登录（需账号能访问听记）。
 4. **大模型 API Key**：装好后在设置页填写（问答/总结用）。
 5. **要上传时**：再在设置 → 上传 填 RAGFlow 地址、密钥，以及四个 dataset id。

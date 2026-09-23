@@ -42,17 +42,70 @@ node_ok() {
   return 1
 }
 
+refresh_node_path() {
+  export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
+  hash -r 2>/dev/null || true
+  if [ -s "$HOME/.nvm/nvm.sh" ]; then
+    # shellcheck disable=SC1091
+    . "$HOME/.nvm/nvm.sh"
+  fi
+}
+
+# 没有 Homebrew 时，下载 Node 22 LTS 的官方 .pkg 并打开安装窗口。
+install_node_pkg() {
+  local ver dest url
+  dest="/tmp/meeting-brain-node.pkg"
+  info "正在查找 Node.js 22 LTS 安装包…"
+  ver="$(python3 -c '
+import json, urllib.request
+req = urllib.request.Request("https://nodejs.org/dist/index.json", headers={"User-Agent": "meeting-brain"})
+with urllib.request.urlopen(req, timeout=25) as r:
+    data = json.load(r)
+for x in data:
+    v = x.get("version") or ""
+    if v.startswith("v22.") and x.get("lts"):
+        print(v)
+        break
+' 2>/dev/null || true)"
+  if [ -z "$ver" ]; then
+    ver="v22.20.0"
+  fi
+  for base in \
+    "https://nodejs.org/dist/${ver}" \
+    "https://npmmirror.com/mirrors/node/${ver}"
+  do
+    url="${base}/node-${ver}.pkg"
+    warn "下载 ${url}"
+    if curl -fL --retry 2 --connect-timeout 20 -o "$dest" "$url"; then
+      info "已下载，正在打开安装窗口（可能要输入开机密码）…"
+      open "$dest"
+      echo
+      warn "请在弹出窗口里点「继续」把 Node 装完，装完后回到本窗口。"
+      read -r -p "[会议助手] 装完后按回车继续…" _
+      refresh_node_path
+      return 0
+    fi
+  done
+  return 1
+}
+
 # ---------- 1. Node.js ----------
+refresh_node_path
 if ! command -v node >/dev/null 2>&1; then
-  warn "未检测到 Node.js，尝试通过 Homebrew 安装…"
+  warn "未检测到 Node.js，尝试安装…"
   if command -v brew >/dev/null 2>&1; then
     brew install node
-  else
-    die "未找到 Homebrew。请先安装 Node.js ≥ 22.5（https://nodejs.org）后重试。"
+    refresh_node_path
+  elif ! install_node_pkg; then
+    open "https://nodejs.org/" 2>/dev/null || true
+    die "自动下载 Node 失败。请打开 https://nodejs.org 下载 LTS（≥ 22.5）装完后，重新运行：bash scripts/install.sh"
   fi
 fi
+if ! command -v node >/dev/null 2>&1; then
+  die "还是找不到 node。请确认刚才的安装已完成，然后重新打开终端再运行：bash scripts/install.sh"
+fi
 if ! node_ok; then
-  die "Node.js 版本过低（$(node -v)），需要 ≥ 22.5。请升级后重试。"
+  die "Node.js 版本过低（$(node -v)），需要 ≥ 22.5。请打开 https://nodejs.org 安装 LTS 后重试。"
 fi
 info "Node.js $(node -v) OK"
 
