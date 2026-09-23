@@ -96,8 +96,22 @@
     .split-2 > :first-child { border-right: 1px solid var(--rule); background: var(--panel); }
     .month { font-size: 12px; color: var(--ink-soft); margin: 16px 0 6px; font-weight: 600; }
     .m-item, .row { padding: 10px 8px; border-bottom: 1px dashed var(--rule); cursor: pointer; }
+    .m-item { border-left: 2px solid transparent; padding-left: 10px; }
+    .m-item.src-row-dingtalk { border-left-color: #3a5a9a; }
+    .m-item.src-row-feishu { border-left-color: #2a7a72; }
+    .m-item.src-row-tencent { border-left-color: var(--moss); }
+    .m-item.src-row-import { border-left-color: #8a7d6c; }
     .m-item:hover, .m-item.sel, .row:hover, .row.sel { background: #efe6d6; }
     .m-item .t, .row .title { font-weight: 500; }
+    .src-mark {
+      display: inline-block; font-size: 11px; font-weight: 600; line-height: 1.4;
+      padding: 1px 6px; margin-right: 6px; vertical-align: 1px; letter-spacing: 0.04em;
+    }
+    .src-mark.src-dingtalk { background: #d9e2f0; color: #2c4a7c; }
+    .src-mark.src-feishu { background: #d4ebe8; color: #1f5f58; }
+    .src-mark.src-tencent { background: #dfe8d8; color: #2f4a36; }
+    .src-mark.src-import { background: #e6ddd0; color: #5c5348; }
+    .meta-line .src-mark { margin-right: 8px; }
     .meta, .src { font-size: 12px; color: var(--ink-soft); margin-top: 3px; }
     .meta { font-family: "IBM Plex Mono", monospace; }
     .doc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
@@ -199,11 +213,44 @@
     .askbox input { flex: 1; }
     .ans { font-size: 13px; line-height: 1.65; padding: 10px 0 14px; border-bottom: 1px dashed var(--rule); margin-bottom: 8px; white-space: pre-wrap; }
     .tx { max-height: 280px; overflow: auto; white-space: pre-wrap; font-size: 12px; line-height: 1.7; background: #efe6d6; padding: 10px 12px; }
-    .filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+    .filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; align-items: center; }
     .filters button {
       border: 0; background: transparent; padding: 4px 2px; font: inherit; cursor: pointer; color: var(--ink-soft);
     }
     .filters button.on { color: var(--ink); font-weight: 600; }
+    .filters-bar {
+      gap: 8px 0; margin: 0 0 8px;
+    }
+    .filter-group {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    }
+    .filter-split {
+      width: 1px; align-self: stretch; min-height: 16px;
+      background: var(--rule); margin: 0 10px;
+    }
+    .filter-seg {
+      background: #efe6d6; padding: 2px; gap: 0;
+    }
+    .filter-seg button {
+      padding: 3px 9px; font-size: 13px;
+    }
+    .filter-seg button.on {
+      background: var(--paper-2); color: var(--ink); font-weight: 600;
+    }
+    .filters-bar .src-mark {
+      margin-right: 0; cursor: pointer; font: inherit;
+      border: 0; vertical-align: middle;
+    }
+    .filters-bar button.src-mark.src-dingtalk { background: #d9e2f0; color: #2c4a7c; }
+    .filters-bar button.src-mark.src-feishu { background: #d4ebe8; color: #1f5f58; }
+    .filters-bar button.src-mark.src-tencent { background: #dfe8d8; color: #2f4a36; }
+    .filters-bar button.src-mark.src-import { background: #e6ddd0; color: #5c5348; }
+    .filters-bar.has-src .src-mark { opacity: 0.42; }
+    .filters-bar.has-src .src-mark.on {
+      opacity: 1; box-shadow: inset 0 0 0 1px currentColor;
+    }
+    .filter-types { font-size: 12px; }
+    .filter-clear { color: var(--ink-soft); }
     .toast {
       position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
       background: var(--ink); color: var(--paper-2); padding: 8px 14px; font-size: 13px; z-index: 9;

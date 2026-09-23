@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { api, qs } from './api.js'
 import {
-  MEET_PAGE, MEETING_TYPES, PROVIDERS, companyMark, fmtShort, groupMonths, lastSyncLabel, lastSyncTitle, srcLabel, syncProgressLabel,
+  MEET_PAGE, MEET_VIEWS, TYPE_FILTERS, PROVIDERS, companyMark, fmtDuration, fmtShort, groupMonths, lastSyncLabel, lastSyncTitle, srcMark, syncProgressLabel,
 } from './format.js'
-import { Md, useDebounced } from './ui.jsx'
+import { Md, SourceMark, useDebounced } from './ui.jsx'
 import { ImportSheet, MeetingDetail } from './meeting-detail.jsx'
 
 export function MeetPage(props) {
@@ -43,7 +43,7 @@ export function MeetPage(props) {
       tag: meetTag,
       type: meetType,
       provider: meetProvider,
-      filter: meetFilter === 'company' ? 'company' : '',
+      filter: meetFilter === 'all' ? '' : meetFilter,
       cursor,
       limit: MEET_PAGE,
     })).then((r) => {
@@ -67,8 +67,17 @@ export function MeetPage(props) {
     const apply = (r, fromPoll) => {
       if (stop || !r) return
       setSt((prev) => {
-        if (!fromPoll || !prev) return r.sources ? r : { ...r, dws: (prev && prev.dws) || r.dws, sources: (prev && prev.sources) || r.sources }
-        return { ...prev, ...r, dws: prev.dws || r.dws, sources: prev.sources || r.sources }
+        const hasSources = r.sources && Object.keys(r.sources).length
+        if (!fromPoll || !prev) {
+          if (hasSources) return r
+          return { ...r, dws: (prev && prev.dws) || r.dws, sources: (prev && prev.sources) || r.sources || {} }
+        }
+        return {
+          ...prev,
+          ...r,
+          dws: r.dws || prev.dws,
+          sources: hasSources ? r.sources : (prev.sources || {}),
+        }
       })
       if (r.syncing) setSyncing(true)
       else if (fromPoll && expectSync.current) {
@@ -119,7 +128,7 @@ export function MeetPage(props) {
     }
     const onVis = () => {
       if (document.visibilityState !== 'visible') return
-      api('/api/sync-status?meta=1').then((r) => apply(r, true)).catch(() => {})
+      api('/api/sync-status').then((r) => apply(r, false)).catch(() => {})
     }
     document.addEventListener('visibilitychange', onVis)
     return () => {
@@ -175,6 +184,12 @@ export function MeetPage(props) {
   }).join(' / ')
   const linkMap = askHits.reduce((m, h) => { if (h.title) m[h.title] = h.taskUuid; return m }, {})
   const remain = Math.max(0, total - items.length)
+  const extraOn = !!(meetType || meetProvider || meetTag)
+  const emptyText = meetFilter === 'pending'
+    ? '没有待整理的会议'
+    : (meetFilter === 'company'
+      ? '还没有上传到公司知识库的会议'
+      : (extraOn || qDebounced ? '没有符合条件的会议' : '没有会议'))
   const doLogin = () => {
     const first = ['dingtalk', 'feishu', 'tencent'].find((id) => sources[id] && !sources[id].authenticated) || 'dingtalk'
     api('/api/sources/login', { provider: first }).then((r) => {
@@ -218,29 +233,48 @@ export function MeetPage(props) {
           {askA ? <button className="quiet" onClick={closeAsk}>关闭</button> : null}
         </div>
         {askA ? <div className="ans"><Md text={askA} linkMap={linkMap} onMeetingClick={(id) => id && setSelected(id)} /></div> : null}
-        <div className="filters">
-          <button
-            className={'meet-filter' + (meetFilter === 'all' && !meetTag && !meetType && !meetProvider ? ' on' : '')}
-            onClick={() => { setMeetFilter('all'); setMeetTag(''); setMeetType(''); setMeetProvider('') }}
-          >全部</button>
-          <button
-            className={'meet-filter' + (meetFilter === 'company' ? ' on' : '')}
-            onClick={() => setMeetFilter(meetFilter === 'company' ? 'all' : 'company')}
-          >已到公司</button>
-          {PROVIDERS.map((p) => (
-            <button
-              key={p.id}
-              className={'meet-filter' + (meetProvider === p.id ? ' on' : '')}
-              onClick={() => setMeetProvider(meetProvider === p.id ? '' : p.id)}
-            >{p.label}</button>
-          ))}
-          {MEETING_TYPES.map((t) => (
-            <button
-              key={t}
-              className={'meet-filter' + (meetType === t ? ' on' : '')}
-              onClick={() => setMeetType(meetType === t ? '' : t)}
-            >{t}</button>
-          ))}
+        <div className={'filters filters-bar' + (meetProvider ? ' has-src' : '')}>
+          <div className="filter-group filter-seg">
+            {MEET_VIEWS.map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                className={'meet-filter' + (meetFilter === v.id ? ' on' : '')}
+                onClick={() => setMeetFilter(v.id)}
+              >{v.label}</button>
+            ))}
+          </div>
+          <span className="filter-split" aria-hidden="true" />
+          <div className="filter-group">
+            {PROVIDERS.map((p) => (
+              <button
+                type="button"
+                key={p.id}
+                className={'src-mark src-' + p.id + (meetProvider === p.id ? ' on' : '')}
+                onClick={() => setMeetProvider(meetProvider === p.id ? '' : p.id)}
+              >{p.label}</button>
+            ))}
+          </div>
+          <span className="filter-split" aria-hidden="true" />
+          <div className="filter-group filter-types">
+            {TYPE_FILTERS.map((t) => (
+              <button
+                type="button"
+                key={t}
+                className={'meet-filter' + (meetType === t ? ' on' : '')}
+                onClick={() => setMeetType(meetType === t ? '' : t)}
+              >{t}</button>
+            ))}
+            {extraOn
+              ? (
+                <button
+                  type="button"
+                  className="filter-clear"
+                  onClick={() => { setMeetType(''); setMeetProvider(''); setMeetTag('') }}
+                >清除</button>
+              )
+              : null}
+          </div>
         </div>
         {meetTag
           ? (
@@ -260,21 +294,27 @@ export function MeetPage(props) {
           ? months.map((g) => (
             <div key={g.key}>
               <div className="month">{g.label}</div>
-              {g.items.map((x) => (
+              {g.items.map((x) => {
+                const mark = srcMark(x.source, x.provider)
+                return (
                 <div
-                  className={'m-item' + (x.taskUuid === currentId ? ' sel' : '')}
+                  className={'m-item src-row-' + mark.id + (x.taskUuid === currentId ? ' sel' : '')}
                   key={x.taskUuid}
                   onClick={() => setSelected(x.taskUuid)}
                 >
-                  <div className="t">{x.title}</div>
+                  <div className="t">
+                    <SourceMark source={x.source} provider={x.provider} />
+                    {x.title}
+                  </div>
                   <div className="meta">
-                    {[fmtShort(x.time), srcLabel(x.source, x.provider), x.projectName || (x.tags || [])[0], companyMark(x)].filter(Boolean).join(' · ')}
+                    {[fmtShort(x.time), fmtDuration(x.durationMs), x.projectName || (x.tags || [])[0], companyMark(x)].filter(Boolean).join(' · ')}
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           ))
-          : <p className="empty">没有会议</p>}
+          : <p className="empty">{emptyText}</p>}
         {nextCursor
           ? (
             <div className="more-row">

@@ -7407,6 +7407,12 @@
   var NAV = [["meet", "\u4F1A\u8BAE"], ["ledger", "\u5F85\u529E"], ["settings", "\u8BBE\u7F6E"]];
   var MEETING_TYPES = ["\u4E2A\u4EBA", "\u516C\u53F8\u7BA1\u7406", "\u516C\u53F8\u8FD0\u8425", "\u9879\u76EE", "\u90E8\u95E8"];
   var PUBLISH_TYPES = MEETING_TYPES.filter((t) => t !== "\u4E2A\u4EBA");
+  var MEET_VIEWS = [
+    { id: "all", label: "\u5168\u90E8" },
+    { id: "pending", label: "\u5F85\u6574\u7406" },
+    { id: "company", label: "\u5DF2\u5165\u5E93" }
+  ];
+  var TYPE_FILTERS = ["\u516C\u53F8\u7BA1\u7406", "\u516C\u53F8\u8FD0\u8425", "\u9879\u76EE", "\u90E8\u95E8", "\u4E2A\u4EBA"];
   var KB_DS = [
     { key: "mgmt", label: "\u516C\u53F8\u7BA1\u7406\u4F1A\u8BAE" },
     { key: "ops", label: "\u516C\u53F8\u8FD0\u8425\u4F1A\u8BAE" },
@@ -7431,6 +7437,16 @@
     if (!ms) return "";
     const d = new Date(ms);
     return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+  function fmtDuration(ms) {
+    const n = Number(ms);
+    if (!Number.isFinite(n) || n <= 0) return "";
+    if (n < 3e4) return "\u4E0D\u8DB31\u5206\u949F";
+    const minutes = Math.round(n / 6e4);
+    if (minutes < 60) return minutes + "\u5206\u949F";
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return m ? h + "\u5C0F\u65F6" + m + "\u5206" : h + "\u5C0F\u65F6";
   }
   function fmtDateTime(ms) {
     if (!ms) return "";
@@ -7472,6 +7488,12 @@
     const p = providerLabel(provider);
     if (s === "shared") return p ? p + "\xB7\u5206\u4EAB" : "\u5206\u4EAB";
     return p || "\u542C\u8BB0";
+  }
+  function srcMark(source, provider) {
+    let id = "dingtalk";
+    if (source === "import" || provider === "import") id = "import";
+    else if (provider === "feishu" || provider === "tencent" || provider === "dingtalk") id = provider;
+    return { id, label: srcLabel(source, provider) || "\u542C\u8BB0" };
   }
   function originLabel(o) {
     return { \u542C\u8BB0: "\u9489\u9489\u542C\u8BB0", \u9489\u9489\u542C\u8BB0: "\u9489\u9489\u542C\u8BB0", \u98DE\u4E66\u5999\u8BB0: "\u98DE\u4E66\u5999\u8BB0", \u817E\u8BAF\u7EAA\u8981: "\u817E\u8BAF\u7EAA\u8981", \u603B\u7ED3: "\u4F1A\u540E\u603B\u7ED3", \u624B\u5DE5: "\u624B\u5DE5" }[o] || o || "\u542C\u8BB0";
@@ -7537,6 +7559,11 @@
         }
       }
     );
+  }
+  function SourceMark(props) {
+    const mark = srcMark(props.source, props.provider);
+    if (!mark.label) return null;
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "src-mark src-" + mark.id, children: mark.label });
   }
   function TitleInput(props) {
     const skipCommit = (0, import_react.useRef)(false);
@@ -8520,7 +8547,9 @@
           editing ? e2("input", { type: "text", style: { marginTop: 8 }, value: attendees, onChange: (ev) => setAttendees(ev.target.value), placeholder: "\u53C2\u4F1A\u4EBA" }) : e2(
             "p",
             { className: "meta-line" },
-            [fmtDateTime(d.startTime), d.attendees, srcLabel(d.source, d.provider), synced ? companyMark(d) : "", personal ? "\u4E2A\u4EBA\u4E0D\u4E0A\u4F20" : ""].filter(Boolean).join(" \xB7 ")
+            e2(SourceMark, { source: d.source, provider: d.provider }),
+            " ",
+            [fmtDateTime(d.startTime), d.attendees, synced ? companyMark(d) : "", personal ? "\u4E2A\u4EBA\u4E0D\u4E0A\u4F20" : ""].filter(Boolean).join(" \xB7 ")
           ),
           tagRow
         ),
@@ -8874,7 +8903,7 @@
         tag: meetTag,
         type: meetType,
         provider: meetProvider,
-        filter: meetFilter === "company" ? "company" : "",
+        filter: meetFilter === "all" ? "" : meetFilter,
         cursor,
         limit: MEET_PAGE
       })).then((r) => {
@@ -8901,8 +8930,17 @@
       const apply = (r, fromPoll) => {
         if (stop || !r) return;
         setSt((prev) => {
-          if (!fromPoll || !prev) return r.sources ? r : { ...r, dws: prev && prev.dws || r.dws, sources: prev && prev.sources || r.sources };
-          return { ...prev, ...r, dws: prev.dws || r.dws, sources: prev.sources || r.sources };
+          const hasSources = r.sources && Object.keys(r.sources).length;
+          if (!fromPoll || !prev) {
+            if (hasSources) return r;
+            return { ...r, dws: prev && prev.dws || r.dws, sources: prev && prev.sources || r.sources || {} };
+          }
+          return {
+            ...prev,
+            ...r,
+            dws: r.dws || prev.dws,
+            sources: hasSources ? r.sources : prev.sources || {}
+          };
         });
         if (r.syncing) setSyncing(true);
         else if (fromPoll && expectSync.current) {
@@ -8960,7 +8998,7 @@
       };
       const onVis = () => {
         if (document.visibilityState !== "visible") return;
-        api("/api/sync-status?meta=1").then((r) => apply(r, true)).catch(() => {
+        api("/api/sync-status").then((r) => apply(r, false)).catch(() => {
         });
       };
       document.addEventListener("visibilitychange", onVis);
@@ -9029,6 +9067,8 @@
       return m;
     }, {});
     const remain = Math.max(0, total - items.length);
+    const extraOn = !!(meetType || meetProvider || meetTag);
+    const emptyText = meetFilter === "pending" ? "\u6CA1\u6709\u5F85\u6574\u7406\u7684\u4F1A\u8BAE" : meetFilter === "company" ? "\u8FD8\u6CA1\u6709\u4E0A\u4F20\u5230\u516C\u53F8\u77E5\u8BC6\u5E93\u7684\u4F1A\u8BAE" : extraOn || qDebounced ? "\u6CA1\u6709\u7B26\u5408\u6761\u4EF6\u7684\u4F1A\u8BAE" : "\u6CA1\u6709\u4F1A\u8BAE";
     const doLogin = () => {
       const first = ["dingtalk", "feishu", "tencent"].find((id) => sources[id] && !sources[id].authenticated) || "dingtalk";
       api("/api/sources/login", { provider: first }).then((r) => {
@@ -9065,46 +9105,54 @@
           askA ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "quiet", onClick: closeAsk, children: "\u5173\u95ED" }) : null
         ] }),
         askA ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "ans", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Md, { text: askA, linkMap, onMeetingClick: (id) => id && setSelected(id) }) }) : null,
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "filters", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "filters filters-bar" + (meetProvider ? " has-src" : ""), children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "filter-group filter-seg", children: MEET_VIEWS.map((v) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
             "button",
             {
-              className: "meet-filter" + (meetFilter === "all" && !meetTag && !meetType && !meetProvider ? " on" : ""),
-              onClick: () => {
-                setMeetFilter("all");
-                setMeetTag("");
-                setMeetType("");
-                setMeetProvider("");
-              },
-              children: "\u5168\u90E8"
-            }
-          ),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+              type: "button",
+              className: "meet-filter" + (meetFilter === v.id ? " on" : ""),
+              onClick: () => setMeetFilter(v.id),
+              children: v.label
+            },
+            v.id
+          )) }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "filter-split", "aria-hidden": "true" }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "filter-group", children: PROVIDERS.map((p) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
             "button",
             {
-              className: "meet-filter" + (meetFilter === "company" ? " on" : ""),
-              onClick: () => setMeetFilter(meetFilter === "company" ? "all" : "company"),
-              children: "\u5DF2\u5230\u516C\u53F8"
-            }
-          ),
-          PROVIDERS.map((p) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
-            "button",
-            {
-              className: "meet-filter" + (meetProvider === p.id ? " on" : ""),
+              type: "button",
+              className: "src-mark src-" + p.id + (meetProvider === p.id ? " on" : ""),
               onClick: () => setMeetProvider(meetProvider === p.id ? "" : p.id),
               children: p.label
             },
             p.id
-          )),
-          MEETING_TYPES.map((t) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
-            "button",
-            {
-              className: "meet-filter" + (meetType === t ? " on" : ""),
-              onClick: () => setMeetType(meetType === t ? "" : t),
-              children: t
-            },
-            t
-          ))
+          )) }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "filter-split", "aria-hidden": "true" }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "filter-group filter-types", children: [
+            TYPE_FILTERS.map((t) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+              "button",
+              {
+                type: "button",
+                className: "meet-filter" + (meetType === t ? " on" : ""),
+                onClick: () => setMeetType(meetType === t ? "" : t),
+                children: t
+              },
+              t
+            )),
+            extraOn ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+              "button",
+              {
+                type: "button",
+                className: "filter-clear",
+                onClick: () => {
+                  setMeetType("");
+                  setMeetProvider("");
+                  setMeetTag("");
+                },
+                children: "\u6E05\u9664"
+              }
+            ) : null
+          ] })
         ] }),
         meetTag ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "tags", style: { margin: "0 0 10px" }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("button", { type: "button", className: "tag active", onClick: () => setMeetTag(""), children: [
           meetTag,
@@ -9122,19 +9170,25 @@
         ),
         months.length ? months.map((g) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { children: [
           /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "month", children: g.label }),
-          g.items.map((x) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
-            "div",
-            {
-              className: "m-item" + (x.taskUuid === currentId ? " sel" : ""),
-              onClick: () => setSelected(x.taskUuid),
-              children: [
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "t", children: x.title }),
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "meta", children: [fmtShort(x.time), srcLabel(x.source, x.provider), x.projectName || (x.tags || [])[0], companyMark(x)].filter(Boolean).join(" \xB7 ") })
-              ]
-            },
-            x.taskUuid
-          ))
-        ] }, g.key)) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { className: "empty", children: "\u6CA1\u6709\u4F1A\u8BAE" }),
+          g.items.map((x) => {
+            const mark = srcMark(x.source, x.provider);
+            return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
+              "div",
+              {
+                className: "m-item src-row-" + mark.id + (x.taskUuid === currentId ? " sel" : ""),
+                onClick: () => setSelected(x.taskUuid),
+                children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "t", children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(SourceMark, { source: x.source, provider: x.provider }),
+                    x.title
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "meta", children: [fmtShort(x.time), fmtDuration(x.durationMs), x.projectName || (x.tags || [])[0], companyMark(x)].filter(Boolean).join(" \xB7 ") })
+                ]
+              },
+              x.taskUuid
+            );
+          })
+        ] }, g.key)) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { className: "empty", children: emptyText }),
         nextCursor ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "more-row", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "quiet", disabled: moreBusy, onClick: () => fetchPage({ append: true, cursor: nextCursor }), children: moreBusy ? "\u52A0\u8F7D\u4E2D" : "\u540E\u9762\u8FD8\u6709 " + remain + " \u573A" }) }) : null
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "pane", children: currentId ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(

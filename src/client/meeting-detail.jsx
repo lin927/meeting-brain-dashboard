@@ -1,7 +1,7 @@
 import React from 'react'
 import { api, fallbackCopy } from './api.js'
-import { MEETING_TYPES, PUBLISH_TYPES, companyMark, fmtDateTime, srcLabel, typeLabel, uploadBtnLabel, ymd } from './format.js'
-import { ConfirmSheet, InlineComposer, Md, SheetFrame, CheckMark, TitleInput, TodoRowTitle, useDebounced } from './ui.jsx'
+import { MEETING_TYPES, PUBLISH_TYPES, companyMark, fmtDateTime, typeLabel, uploadBtnLabel, ymd } from './format.js'
+import { ConfirmSheet, InlineComposer, Md, SheetFrame, CheckMark, SourceMark, TitleInput, TodoRowTitle, useDebounced } from './ui.jsx'
 
 const e = React.createElement
 
@@ -635,7 +635,9 @@ export function MeetingDetail(props) {
         editing
           ? e('input', { type: 'text', style: { marginTop: 8 }, value: attendees, onChange: (ev) => setAttendees(ev.target.value), placeholder: '参会人' })
           : e('p', { className: 'meta-line' },
-            [fmtDateTime(d.startTime), d.attendees, srcLabel(d.source, d.provider), synced ? companyMark(d) : '', personal ? '个人不上传' : ''].filter(Boolean).join(' · ')),
+            e(SourceMark, { source: d.source, provider: d.provider }),
+            ' ',
+            [fmtDateTime(d.startTime), d.attendees, synced ? companyMark(d) : '', personal ? '个人不上传' : ''].filter(Boolean).join(' · ')),
         tagRow),
       e('div', { className: 'tools' }, tools)),
     e('div', { className: 'tabs' },

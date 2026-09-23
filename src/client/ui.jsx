@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { srcMark } from './format.js'
 
 const e = React.createElement
 
@@ -16,6 +17,12 @@ export function CheckMark(props) {
       }}
     />
   )
+}
+
+export function SourceMark(props) {
+  const mark = srcMark(props.source, props.provider)
+  if (!mark.label) return null
+  return <span className={'src-mark src-' + mark.id}>{mark.label}</span>
 }
 
 export function TitleInput(props) {

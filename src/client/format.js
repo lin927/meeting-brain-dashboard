@@ -1,6 +1,12 @@
 export const NAV = [['meet', '会议'], ['ledger', '待办'], ['settings', '设置']]
 export const MEETING_TYPES = ['个人', '公司管理', '公司运营', '项目', '部门']
 export const PUBLISH_TYPES = MEETING_TYPES.filter((t) => t !== '个人')
+export const MEET_VIEWS = [
+  { id: 'all', label: '全部' },
+  { id: 'pending', label: '待整理' },
+  { id: 'company', label: '已入库' },
+]
+export const TYPE_FILTERS = ['公司管理', '公司运营', '项目', '部门', '个人']
 export const KB_DS = [
   { key: 'mgmt', label: '公司管理会议' },
   { key: 'ops', label: '公司运营会议' },
@@ -26,6 +32,17 @@ export function fmtShort(ms) {
   if (!ms) return ''
   const d = new Date(ms)
   return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+export function fmtDuration(ms) {
+  const n = Number(ms)
+  if (!Number.isFinite(n) || n <= 0) return ''
+  if (n < 30000) return '不足1分钟'
+  const minutes = Math.round(n / 60000)
+  if (minutes < 60) return minutes + '分钟'
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return m ? (h + '小时' + m + '分') : (h + '小时')
 }
 
 export function fmtDateTime(ms) {
@@ -76,6 +93,13 @@ export function srcLabel(s, provider) {
   const p = providerLabel(provider)
   if (s === 'shared') return p ? (p + '·分享') : '分享'
   return p || '听记'
+}
+
+export function srcMark(source, provider) {
+  let id = 'dingtalk'
+  if (source === 'import' || provider === 'import') id = 'import'
+  else if (provider === 'feishu' || provider === 'tencent' || provider === 'dingtalk') id = provider
+  return { id, label: srcLabel(source, provider) || '听记' }
 }
 
 export function originLabel(o) {
