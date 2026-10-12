@@ -1,6 +1,6 @@
 import React from 'react'
 import { api, fallbackCopy } from './api.js'
-import { MEETING_TYPES, PUBLISH_TYPES, companyMark, fmtDateTime, typeLabel, uploadBtnLabel, ymd } from './format.js'
+import { MEETING_TYPES, PUBLISH_TYPES, companyMark, fmtBytes, fmtDateTime, typeLabel, uploadBtnLabel, ymd } from './format.js'
 import { ConfirmSheet, InlineComposer, Md, SheetFrame, CheckMark, SourceMark, TitleInput, TodoRowTitle, useDebounced } from './ui.jsx'
 
 const e = React.createElement
@@ -70,6 +70,7 @@ export function MeetingDetail(props) {
   const [delBusy, setDelBusy] = React.useState(false)
   const [confirmRefresh, setConfirmRefresh] = React.useState(false)
   const [refreshBusy, setRefreshBusy] = React.useState(false)
+  const [mediaBusy, setMediaBusy] = React.useState(false)
   const [classifyBusy, setClassifyBusy] = React.useState(false)
   const [confirmDeep, setConfirmDeep] = React.useState(false)
   const [confirmSharedTitle, setConfirmSharedTitle] = React.useState(false)
@@ -349,6 +350,16 @@ export function MeetingDetail(props) {
   }
   const removeLocal = () => setConfirmDel(true)
   const canRefresh = d && d.canRefresh !== false && d.provider !== 'import' && d.source !== 'import' && !String(uuid || '').startsWith('import-')
+  const media = (d && d.media) || {}
+  const canDownloadMedia = media.canDownload
+  const downloadMedia = () => {
+    if (mediaBusy) return
+    setMediaBusy(true)
+    api('/api/meeting/media', { id: uuid }, 'POST', { timeoutMs: 10 * 60 * 1000 }).then((r) => {
+      if (r && r.taskUuid) setD(r)
+      toast((r && r.message) || (r && r.downloaded ? '已下载到本机' : '没有可下载的录音'))
+    }).catch((err) => toast(String(err && err.message || err))).finally(() => setMediaBusy(false))
+  }
   const fromLabel = (d && d.providerLabel) || '来源'
   const doRefresh = () => {
     if (refreshBusy) return
@@ -466,6 +477,14 @@ export function MeetingDetail(props) {
         e('button', { className: 'quiet', key: 'e', onClick: () => { cancelBody(); setEditProjectQuery(''); setEditing(true) } }, '编辑'),
         canRefresh
           ? e('button', { className: 'quiet', key: 'rf', disabled: refreshBusy, onClick: () => setConfirmRefresh(true) }, refreshBusy ? '重拉中' : '重拉')
+          : null,
+        canDownloadMedia
+          ? e('button', {
+              className: 'quiet',
+              key: 'media',
+              disabled: mediaBusy,
+              onClick: downloadMedia,
+            }, mediaBusy ? '下载中' : (media.exists ? '重新下载录音' : '下载录音'))
           : null,
         e('button', { className: 'quiet danger', key: 'del', onClick: removeLocal }, '删除'),
         personal
@@ -638,6 +657,16 @@ export function MeetingDetail(props) {
             e(SourceMark, { source: d.source, provider: d.provider }),
             ' ',
             [fmtDateTime(d.startTime), d.attendees, synced ? companyMark(d) : '', personal ? '个人不上传' : ''].filter(Boolean).join(' · ')),
+        media.exists
+          ? e('div', { className: 'media-row', key: 'media' },
+              media.kind === 'video'
+                ? e('video', { className: 'media-player', controls: true, src: media.fileUrl, preload: 'metadata' })
+                : e('audio', { className: 'media-player', controls: true, src: media.fileUrl, preload: 'metadata' }),
+              e('a', { className: 'quiet', href: media.fileUrl, target: '_blank', rel: 'noreferrer' }, '打开文件' + (fmtBytes(media.bytes) ? ' · ' + fmtBytes(media.bytes) : '')))
+          : (media.playbackUrl
+            ? e('div', { className: 'media-row', key: 'media' },
+                e('a', { className: 'quiet', href: media.playbackUrl, target: '_blank', rel: 'noreferrer' }, '在腾讯会议打开录制'))
+            : null),
         tagRow),
       e('div', { className: 'tools' }, tools)),
     e('div', { className: 'tabs' },

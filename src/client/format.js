@@ -45,6 +45,16 @@ export function fmtDuration(ms) {
   return m ? (h + '小时' + m + '分') : (h + '小时')
 }
 
+export function fmtBytes(n) {
+  const x = Number(n)
+  if (!Number.isFinite(x) || x <= 0) return ''
+  if (x < 1024) return x + ' B'
+  if (x < 1024 * 1024) return Math.round(x / 1024) + ' KB'
+  const mb = x / (1024 * 1024)
+  const s = mb >= 10 ? String(Math.round(mb)) : mb.toFixed(1).replace(/\.0$/, '')
+  return s + ' MB'
+}
+
 export function fmtDateTime(ms) {
   if (!ms) return ''
   const d = new Date(ms)

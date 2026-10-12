@@ -7448,6 +7448,15 @@
     const m = minutes % 60;
     return m ? h + "\u5C0F\u65F6" + m + "\u5206" : h + "\u5C0F\u65F6";
   }
+  function fmtBytes(n) {
+    const x = Number(n);
+    if (!Number.isFinite(x) || x <= 0) return "";
+    if (x < 1024) return x + " B";
+    if (x < 1024 * 1024) return Math.round(x / 1024) + " KB";
+    const mb = x / (1024 * 1024);
+    const s = mb >= 10 ? String(Math.round(mb)) : mb.toFixed(1).replace(/\.0$/, "");
+    return s + " MB";
+  }
   function fmtDateTime(ms) {
     if (!ms) return "";
     const d = new Date(ms);
@@ -7906,6 +7915,7 @@
     const [delBusy, setDelBusy] = import_react2.default.useState(false);
     const [confirmRefresh, setConfirmRefresh] = import_react2.default.useState(false);
     const [refreshBusy, setRefreshBusy] = import_react2.default.useState(false);
+    const [mediaBusy, setMediaBusy] = import_react2.default.useState(false);
     const [classifyBusy, setClassifyBusy] = import_react2.default.useState(false);
     const [confirmDeep, setConfirmDeep] = import_react2.default.useState(false);
     const [confirmSharedTitle, setConfirmSharedTitle] = import_react2.default.useState(false);
@@ -8240,6 +8250,16 @@
     };
     const removeLocal = () => setConfirmDel(true);
     const canRefresh = d && d.canRefresh !== false && d.provider !== "import" && d.source !== "import" && !String(uuid || "").startsWith("import-");
+    const media = d && d.media || {};
+    const canDownloadMedia = media.canDownload;
+    const downloadMedia = () => {
+      if (mediaBusy) return;
+      setMediaBusy(true);
+      api("/api/meeting/media", { id: uuid }, "POST", { timeoutMs: 10 * 60 * 1e3 }).then((r) => {
+        if (r && r.taskUuid) setD(r);
+        toast(r && r.message || (r && r.downloaded ? "\u5DF2\u4E0B\u8F7D\u5230\u672C\u673A" : "\u6CA1\u6709\u53EF\u4E0B\u8F7D\u7684\u5F55\u97F3"));
+      }).catch((err2) => toast(String(err2 && err2.message || err2))).finally(() => setMediaBusy(false));
+    };
     const fromLabel = d && d.providerLabel || "\u6765\u6E90";
     const doRefresh = () => {
       if (refreshBusy) return;
@@ -8366,6 +8386,12 @@
         setEditing(true);
       } }, "\u7F16\u8F91"),
       canRefresh ? e2("button", { className: "quiet", key: "rf", disabled: refreshBusy, onClick: () => setConfirmRefresh(true) }, refreshBusy ? "\u91CD\u62C9\u4E2D" : "\u91CD\u62C9") : null,
+      canDownloadMedia ? e2("button", {
+        className: "quiet",
+        key: "media",
+        disabled: mediaBusy,
+        onClick: downloadMedia
+      }, mediaBusy ? "\u4E0B\u8F7D\u4E2D" : media.exists ? "\u91CD\u65B0\u4E0B\u8F7D\u5F55\u97F3" : "\u4E0B\u8F7D\u5F55\u97F3") : null,
       e2("button", { className: "quiet danger", key: "del", onClick: removeLocal }, "\u5220\u9664"),
       personal ? e2("span", { className: "meta", key: "p", style: { margin: "0 0 0 8px" } }, "\u4E2A\u4EBA\u4E0D\u4E0A\u4F20") : e2("button", {
         className: "sync-pill" + (synced ? " on" : ""),
@@ -8551,6 +8577,16 @@
             " ",
             [fmtDateTime(d.startTime), d.attendees, synced ? companyMark(d) : "", personal ? "\u4E2A\u4EBA\u4E0D\u4E0A\u4F20" : ""].filter(Boolean).join(" \xB7 ")
           ),
+          media.exists ? e2(
+            "div",
+            { className: "media-row", key: "media" },
+            media.kind === "video" ? e2("video", { className: "media-player", controls: true, src: media.fileUrl, preload: "metadata" }) : e2("audio", { className: "media-player", controls: true, src: media.fileUrl, preload: "metadata" }),
+            e2("a", { className: "quiet", href: media.fileUrl, target: "_blank", rel: "noreferrer" }, "\u6253\u5F00\u6587\u4EF6" + (fmtBytes(media.bytes) ? " \xB7 " + fmtBytes(media.bytes) : ""))
+          ) : media.playbackUrl ? e2(
+            "div",
+            { className: "media-row", key: "media" },
+            e2("a", { className: "quiet", href: media.playbackUrl, target: "_blank", rel: "noreferrer" }, "\u5728\u817E\u8BAF\u4F1A\u8BAE\u6253\u5F00\u5F55\u5236")
+          ) : null,
           tagRow
         ),
         e2("div", { className: "tools" }, tools)

@@ -31,6 +31,7 @@ import { importMeeting } from '../lib/import-meeting.js'
 import { persistSyncResult, isSyncing, syncProgress, enqueueSync } from '../lib/sync-run.js'
 import { syncStatus } from '../lib/sync-status.js'
 import { refreshByMeeting, writeTitle, writeSummary, spawnLogin, authStatus, inferProvider, providerMeta } from '../lib/providers/index.js'
+import { downloadMeetingMedia, mediaFileFor, removeMeetingMedia } from '../lib/media.js'
 import { applyAppUpdate, armAppUpdate, checkAppUpdate, markRunningRevision, scheduleRestart } from '../lib/app-update.js'
 import { applyZipBuffer } from '../lib/app-zip.js'
 import { listLogs, pushLog } from '../lib/runtime-log.js'
@@ -374,6 +375,7 @@ app.post('/api/meeting/delete', async (req, res) => {
       if (retracted && retracted.error) return res.status(400).json({ error: retracted.error })
     }
     const db2 = open()
+    removeMeetingMedia(id)
     const okDel = deleteMeetingLocal(db2, id)
     db2.close()
     if (!okDel) return fail(res, new Error('未找到会议'))
@@ -409,6 +411,40 @@ app.post('/api/meeting/refresh', async (req, res) => {
         }).catch((e) => console.error('index refresh:', e.message))
       })
     }
+  } catch (e) { fail(res, e) }
+})
+
+app.post('/api/meeting/media', async (req, res) => {
+  try {
+    const id = String((req.body && req.body.id) || '')
+    if (!id) return fail(res, new Error('缺少 id'))
+    const r = await downloadMeetingMedia(id)
+    const detail = meetingDetail(id)
+    if (!detail) return fail(res, new Error('未找到会议'))
+    const playbackUrl = r.playbackUrl || (detail.media && detail.media.playbackUrl) || ''
+    const message = r.downloaded
+      ? '已下载到本机'
+      : (playbackUrl ? '腾讯这场没有可下载的录音文件，可用页面上的链接在线播放' : '没有可下载的录音')
+    if (r.downloaded) pushLog('录音', '下载「' + (detail.title || id) + '」')
+    ok(res, {
+      ...detail,
+      downloaded: !!r.downloaded,
+      playbackUrl,
+      message,
+      media: { ...(detail.media || {}), playbackUrl },
+    })
+  } catch (e) { fail(res, e) }
+})
+
+app.get('/api/meeting/media-file', (req, res) => {
+  try {
+    const id = String((req.query && req.query.id) || '')
+    if (!id) return fail(res, new Error('缺少 id'))
+    const file = mediaFileFor(id)
+    if (!file) return res.status(404).json({ error: '本机还没有这场会的录音' })
+    res.setHeader('Content-Type', file.mime || 'application/octet-stream')
+    res.setHeader('Content-Disposition', "inline; filename*=UTF-8''" + encodeURIComponent(file.name || 'media'))
+    res.sendFile(file.abs)
   } catch (e) { fail(res, e) }
 })
 
