@@ -7413,12 +7413,6 @@
     { id: "company", label: "\u5DF2\u5165\u5E93" }
   ];
   var TYPE_FILTERS = ["\u516C\u53F8\u7BA1\u7406", "\u516C\u53F8\u8FD0\u8425", "\u9879\u76EE", "\u90E8\u95E8", "\u4E2A\u4EBA"];
-  var KB_DS = [
-    { key: "mgmt", label: "\u516C\u53F8\u7BA1\u7406\u4F1A\u8BAE" },
-    { key: "ops", label: "\u516C\u53F8\u8FD0\u8425\u4F1A\u8BAE" },
-    { key: "project", label: "\u9879\u76EE\u4F1A\u8BAE" },
-    { key: "dept", label: "\u90E8\u95E8\u4F1A\u8BAE" }
-  ];
   var LLM_PRESETS = [
     { id: "deepseek", label: "DeepSeek", baseUrl: "https://api.deepseek.com", model: "deepseek-chat" },
     { id: "ollama", label: "\u672C\u673A Ollama", baseUrl: "http://127.0.0.1:11434/v1", model: "qwen2.5:7b" },
@@ -7853,6 +7847,10 @@
   // src/client/meeting-detail.jsx
   var import_react2 = __toESM(require_react(), 1);
   var e2 = import_react2.default.createElement;
+  function deptChoiceLabel(p) {
+    const name = p && p.primary ? "\u4E3B " + p.name : p && p.name || "";
+    return name + (p && p.code ? " \xB7 " + p.code : "");
+  }
   function foldProject(s) {
     return String(s || "").trim().toLowerCase();
   }
@@ -7901,6 +7899,7 @@
     const [txDraft, setTxDraft] = import_react2.default.useState("");
     const [scope, setScope] = import_react2.default.useState("");
     const [projectName, setProjectName] = import_react2.default.useState("");
+    const [departmentName, setDepartmentName] = import_react2.default.useState("");
     const [addingProject, setAddingProject] = import_react2.default.useState(false);
     const [editProjectQuery, setEditProjectQuery] = import_react2.default.useState("");
     const [tags, setTags] = import_react2.default.useState([]);
@@ -7962,6 +7961,7 @@
           setDeep(r.deepSummary || "");
           setScope(r.type || r.scope || "");
           setProjectName(r.projectName || "");
+          setDepartmentName(r.departmentName || "");
           setTags(r.tags || []);
         }
       }).catch((e3) => setErr(String(e3 && e3.message || e3)));
@@ -7976,16 +7976,29 @@
       }).catch(() => {
       });
     }, []);
+    const refreshDepartments = import_react2.default.useCallback(() => {
+      api("/api/departments").then((r) => {
+        const items = r && r.items || [];
+        setD((prev) => prev ? { ...prev, departments: items } : prev);
+      }).catch(() => {
+      });
+    }, []);
     const wasActive = import_react2.default.useRef(!!active);
     import_react2.default.useEffect(() => {
       const now = !!active;
       const became = now && !wasActive.current;
       wasActive.current = now;
-      if (became) refreshProjects();
-    }, [active, refreshProjects]);
+      if (became) {
+        refreshProjects();
+        refreshDepartments();
+      }
+    }, [active, refreshProjects, refreshDepartments]);
     import_react2.default.useEffect(() => {
-      if (editing || confirmUploadGate) refreshProjects();
-    }, [editing, confirmUploadGate, refreshProjects]);
+      if (editing || confirmUploadGate) {
+        refreshProjects();
+        refreshDepartments();
+      }
+    }, [editing, confirmUploadGate, refreshProjects, refreshDepartments]);
     const editQDebounced = useDebounced(editProjectQuery, 280);
     const pickQDebounced = useDebounced(pickQuery, 280);
     import_react2.default.useEffect(() => {
@@ -8154,7 +8167,7 @@
       }
       setConfirmSharedTitle(false);
       setSaving(true);
-      const body = { id: uuid, title: String(title || "").trim() || d.title, attendees, type: scope, tags, projectName };
+      const body = { id: uuid, title: String(title || "").trim() || d.title, attendees, type: scope, tags, projectName, departmentName };
       if (opts && opts.skipDingTalk) body.skipDingTalk = true;
       api("/api/meeting", body, "PATCH").then((r) => {
         setD(r);
@@ -8200,9 +8213,11 @@
         }).catch((err2) => toast(String(err2 && err2.message || err2))).finally(() => setPubBusy(false));
         return;
       }
-      if (!t || t === "\u9879\u76EE" && !String(d.projectName || "").trim()) {
-        setPickType(t === "\u9879\u76EE" ? "\u9879\u76EE" : "");
-        setPickName("");
+      const projectMissing = t === "\u9879\u76EE" && (!String(d.projectName || "").trim() || !String(d.projectCode || "").trim());
+      const departmentMissing = t === "\u90E8\u95E8" && (!String(d.departmentName || "").trim() || !String(d.departmentId || "").trim());
+      if (!t || projectMissing || departmentMissing) {
+        setPickType(t === "\u9879\u76EE" || t === "\u90E8\u95E8" ? t : "");
+        setPickName(t === "\u9879\u76EE" ? String(d.projectName || "") : t === "\u90E8\u95E8" ? String(d.departmentName || "") : "");
         setPickQuery("");
         setAddingPick(false);
         setConfirmUploadGate(true);
@@ -8222,14 +8237,33 @@
       const type = String(pickType || "").trim();
       const name = String(pickName || "").trim();
       if (!type || pickBusy || pubBusy) return;
-      if (type === "\u9879\u76EE" && !name) return;
+      if ((type === "\u9879\u76EE" || type === "\u90E8\u95E8") && !name) return;
+      const rows = type === "\u90E8\u95E8" ? d.departments || [] : unionProjects(d.projects || [], remoteProjects);
+      const picked = type === "\u9879\u76EE" || type === "\u90E8\u95E8" ? rows.find((p) => p.name === name) : null;
+      const code = String(picked && picked.code || "").trim();
+      if (type === "\u9879\u76EE" && !code) {
+        toast("\u9879\u76EE\u5F52\u6863\u5FC5\u987B\u6709\u7F16\u53F7\uFF0C\u4ECE\u79F0\u547C\u8868\u9009\u5E26\u7F16\u53F7\u7684\u9879\u76EE");
+        return;
+      }
+      if (type === "\u90E8\u95E8" && !code) {
+        toast("\u90E8\u95E8\u5F52\u6863\u5FC5\u987B\u6709\u7F16\u53F7\uFF0C\u4ECE\u79F0\u547C\u8868\u9009\u5E26\u7F16\u53F7\u7684\u90E8\u95E8");
+        return;
+      }
       setPickBusy(true);
       const body = { id: uuid, type };
-      if (type === "\u9879\u76EE") body.projectName = name;
+      if (type === "\u9879\u76EE") {
+        body.projectName = name;
+        body.projectCode = code;
+      }
+      if (type === "\u90E8\u95E8") {
+        body.departmentName = name;
+        body.departmentId = code;
+      }
       api("/api/meeting", body, "PATCH").then((r) => {
         setD(r);
         setScope(r && (r.type || r.scope) || type);
-        setProjectName(r && r.projectName || name);
+        setProjectName(r && r.projectName || (type === "\u9879\u76EE" ? name : ""));
+        setDepartmentName(r && r.departmentName || (type === "\u90E8\u95E8" ? name : ""));
         setConfirmUploadGate(false);
         setPickType("");
         setPickName("");
@@ -8276,6 +8310,7 @@
         setDeep(r && r.deepSummary || "");
         setScope(r && (r.type || r.scope) || "");
         setProjectName(r && r.projectName || "");
+        setDepartmentName(r && r.departmentName || "");
         setTags(r && r.tags || []);
         toast(r && r.refresh && r.refresh.message || "\u5DF2\u4ECE" + fromLabel + "\u91CD\u62C9");
         if (onChanged) onChanged();
@@ -8297,10 +8332,13 @@
           setD(m);
           setScope(m.type || m.scope || "");
           setProjectName(m.projectName || "");
+          setDepartmentName(m.departmentName || "");
           setTags(m.tags || []);
         }
         const hit = r && r.items && r.items[0];
-        toast(hit ? "\u5DF2\u6807\u4E3A" + hit.type + (hit.project ? " \xB7 " + hit.project : "") + (hit.tags && hit.tags.length ? " \xB7 " + hit.tags.join("\u3001") : "") : "\u6CA1\u6709\u89C4\u5219\u547D\u4E2D");
+        const named = hit ? hit.project || hit.department || "" : "";
+        const extraTags = hit ? (hit.tags || []).filter((t) => t !== named) : [];
+        toast(hit ? "\u5DF2\u6807\u4E3A" + hit.type + (named ? " \xB7 " + named : "") + (extraTags.length ? " \xB7 " + extraTags.join("\u3001") : "") : "\u6CA1\u6709\u89C4\u5219\u547D\u4E2D");
         if (onChanged) onChanged();
       }).catch((err2) => toast(String(err2 && err2.message || err2))).finally(() => setClassifyBusy(false));
     };
@@ -8375,6 +8413,7 @@
         setAttendees(d && d.attendees || "");
         setScope(d && (d.type || d.scope) || "");
         setProjectName(d && d.projectName || "");
+        setDepartmentName(d && d.departmentName || "");
         setEditProjectQuery("");
         setTags(d && d.tags || []);
         setEditing(false);
@@ -8402,11 +8441,12 @@
     ];
     const pickScope = (s) => {
       setScope(s);
+      setEditProjectQuery("");
       if (s !== "\u9879\u76EE") {
         setProjectName("");
         setAddingProject(false);
-        setEditProjectQuery("");
       }
+      if (s !== "\u90E8\u95E8") setDepartmentName("");
     };
     const projectHits = (() => {
       const q = String(editProjectQuery || "").trim().toLowerCase();
@@ -8419,6 +8459,16 @@
       }
       const matched = rows.filter((p) => String(p.name || "").toLowerCase().includes(q) || String(p.code || "").toLowerCase().includes(q));
       const cap = 12;
+      return { q, list: matched.slice(0, cap), more: Math.max(0, matched.length - cap) };
+    })();
+    const departmentHits = (() => {
+      const q = String(editProjectQuery || "").trim().toLowerCase();
+      const rows = (d.departments || []).slice();
+      if (departmentName && !rows.some((p) => p.name === departmentName)) {
+        rows.unshift({ name: departmentName, code: "" });
+      }
+      const matched = q ? rows.filter((p) => String(p.name || "").toLowerCase().includes(q) || String(p.code || "").toLowerCase().includes(q)) : rows;
+      const cap = 24;
       return { q, list: matched.slice(0, cap), more: Math.max(0, matched.length - cap) };
     })();
     const tagRow = editing ? e2(
@@ -8506,6 +8556,37 @@
           }) : e2("button", { type: "button", className: "quiet", key: "proj-add", onClick: () => setAddingProject(true) }, "+ \u5176\u4ED6")
         ),
         !projectHits.q && !projectName ? e2("p", { className: "hint", style: { marginTop: 6 } }, "\u9879\u76EE\u5F88\u591A\uFF0C\u5148\u641C\u540D\u79F0\u6216\u7F16\u53F7\u3002") : projectHits.q && !projectHits.list.length ? e2("p", { className: "hint", style: { marginTop: 6 } }, "\u6CA1\u6709\u5339\u914D\u7684\u9879\u76EE\u3002") : projectHits.more ? e2("p", { className: "hint", style: { marginTop: 6 } }, "\u8FD8\u6709 " + projectHits.more + " \u4E2A\uFF0C\u518D\u5199\u7EC6\u4E00\u70B9\u3002") : null
+      ) : null,
+      scope === "\u90E8\u95E8" ? e2(
+        "div",
+        { className: "field", style: { marginTop: 10 }, key: "dept" },
+        e2("span", null, "\u90E8\u95E8"),
+        e2("input", {
+          type: "text",
+          placeholder: "\u8F93\u5165\u540D\u79F0\u6216\u7F16\u53F7\u7B5B\u9009",
+          value: editProjectQuery,
+          onChange: (ev) => setEditProjectQuery(ev.target.value)
+        }),
+        e2(
+          "div",
+          { className: "cat-pills" },
+          e2("button", {
+            type: "button",
+            key: "dept-none",
+            className: !departmentName ? "on" : "",
+            onClick: () => setDepartmentName("")
+          }, "\u672A\u6807"),
+          departmentHits.list.map((p) => e2("button", {
+            type: "button",
+            key: "dept-" + (p.code || p.name),
+            className: departmentName === p.name ? "on" : "",
+            onClick: () => {
+              setDepartmentName(p.name);
+              setEditProjectQuery("");
+            }
+          }, deptChoiceLabel(p)))
+        ),
+        !departmentHits.list.length ? e2("p", { className: "hint", style: { marginTop: 6 } }, departmentHits.q ? "\u6CA1\u6709\u5339\u914D\u7684\u90E8\u95E8\u3002" : "\u8FD8\u6CA1\u6709\u90E8\u95E8\u3002\u5230\u8BBE\u7F6E \u2192 \u79F0\u547C \u2192 \u90E8\u95E8\uFF0C\u70B9\u540C\u6B65\u90E8\u95E8\u3002") : departmentHits.more ? e2("p", { className: "hint", style: { marginTop: 6 } }, "\u8FD8\u6709 " + departmentHits.more + " \u4E2A\uFF0C\u518D\u5199\u7EC6\u4E00\u70B9\u3002") : e2("p", { className: "hint", style: { marginTop: 6 } }, "\u4E3B\u90E8\u95E8\u548C\u5E38\u7528\u90E8\u95E8\u6392\u5728\u524D\u9762\u3002")
       ) : null
     ) : e2(
       "div",
@@ -8517,6 +8598,12 @@
         key: "proj",
         onClick: () => onTag && onTag(d.projectName)
       }, d.projectName + (d.projectCode ? " \xB7 " + d.projectCode : "")) : meetType === "\u9879\u76EE" ? e2("span", { className: "tag", key: "proj-miss", style: { cursor: "default" } }, "\u672A\u6807\u660E\u9879\u76EE") : null,
+      meetType === "\u90E8\u95E8" && d.departmentName ? e2("button", {
+        type: "button",
+        className: "tag" + (meetTag === d.departmentName ? " active" : ""),
+        key: "dept",
+        onClick: () => onTag && onTag(d.departmentName)
+      }, d.departmentName + (d.departmentId ? " \xB7 " + d.departmentId : "")) : meetType === "\u90E8\u95E8" ? e2("span", { className: "tag", key: "dept-miss", style: { cursor: "default" } }, "\u672A\u6807\u660E\u90E8\u95E8") : null,
       d.scopeSource !== "user" ? e2("button", {
         type: "button",
         className: "quiet",
@@ -8524,7 +8611,7 @@
         disabled: classifyBusy,
         onClick: doClassify
       }, classifyBusy ? "\u586B\u5199\u4E2D" : meetType ? "\u6309\u89C4\u5219\u91CD\u7B97" : "\u6309\u89C4\u5219\u586B\u5199") : null,
-      (d.tags || []).filter((t) => t !== d.projectName).map((t) => e2("button", {
+      (d.tags || []).filter((t) => t !== d.projectName && t !== d.departmentName).map((t) => e2("button", {
         type: "button",
         className: "tag" + (meetTag === t ? " active" : ""),
         key: t,
@@ -8716,10 +8803,13 @@
       confirmRetract ? e2(ConfirmSheet, {
         title: "\u64A4\u56DE\u516C\u53F8\u77E5\u8BC6\u5E93",
         lede: (() => {
+          if (pubRemote && pubRemote.gateway === false) {
+            return "\u672C\u673A\u66FE\u6807\u8BB0\u5DF2\u4E0A\u4F20\u3002\u4EE5\u524D\u76F4\u8FDE RAGFlow \u7684\u90A3\u7BC7\u4E0D\u4F1A\u81EA\u52A8\u5220\uFF1B\u8FD9\u6B21\u53EA\u53D6\u6D88\u672C\u673A\u6807\u8BB0\u3002\u8BB0\u5F55\u3001\u603B\u7ED3\u548C\u5F85\u529E\u90FD\u8FD8\u5728\u3002";
+          }
           const who = pubRemote && pubRemote.uploadedBy;
           const other = who && pubOperator && who !== pubOperator;
           if (other) return "\u8FD9\u7BC7\u662F" + who + "\u4E0A\u4F20\u7684\u3002\u64A4\u56DE\u4F1A\u4ECE\u300C" + (meetType || "\u5BF9\u5E94") + "\u300D\u77E5\u8BC6\u5E93\u5220\u6389\u73B0\u5728\u8FD9\u4E00\u4EFD\u3002\u672C\u673A\u8BB0\u5F55\u3001\u603B\u7ED3\u548C\u5F85\u529E\u90FD\u8FD8\u5728\u3002";
-          return "\u4F1A\u4ECE\u300C" + (meetType || "\u5BF9\u5E94") + "\u300D\u77E5\u8BC6\u5E93\u5220\u6389\u8FD9\u573A\u4F1A\u90A3\u4E00\u7BC7\u3002\u672C\u673A\u8BB0\u5F55\u3001\u603B\u7ED3\u548C\u5F85\u529E\u90FD\u8FD8\u5728\u3002";
+          return "\u4F1A\u4ECE\u300C" + (meetType || "\u5BF9\u5E94") + "\u300D\u77E5\u8BC6\u5E93\u64A4\u56DE\u8FD9\u573A\u4F1A\u3002\u672C\u673A\u8BB0\u5F55\u3001\u603B\u7ED3\u548C\u5F85\u529E\u90FD\u8FD8\u5728\u3002";
         })(),
         confirmLabel: "\u64A4\u56DE",
         danger: true,
@@ -8732,8 +8822,8 @@
       confirmUploadGate ? e2(
         SheetFrame,
         {
-          title: pickType === "\u9879\u76EE" && (d.type || d.scope) === "\u9879\u76EE" ? "\u6807\u660E\u9879\u76EE\u540E\u4E0A\u4F20" : "\u9009\u7C7B\u578B\u540E\u4E0A\u4F20",
-          lede: d.type || d.scope ? "\u9879\u76EE\u4F1A\u8BAE\u8FDB\u540C\u4E00\u4E2A\u77E5\u8BC6\u5E93\u3002\u5148\u9009\u8FD9\u573A\u4F1A\u662F\u54EA\u4E2A\u9879\u76EE\uFF0C\u518D\u4E0A\u4F20\u3002" : "\u5148\u9009\u8FD9\u573A\u4F1A\u7684\u7C7B\u578B\uFF0C\u518D\u4E0A\u4F20\u5230\u5BF9\u5E94\u77E5\u8BC6\u5E93\u3002\u4E2A\u4EBA\u4F1A\u8BAE\u4E0D\u80FD\u4E0A\u4F20\u3002",
+          title: (d.type || d.scope) === "\u90E8\u95E8" || pickType === "\u90E8\u95E8" ? "\u6807\u660E\u90E8\u95E8\u540E\u4E0A\u4F20" : pickType === "\u9879\u76EE" && (d.type || d.scope) === "\u9879\u76EE" ? "\u6807\u660E\u9879\u76EE\u540E\u4E0A\u4F20" : "\u9009\u7C7B\u578B\u540E\u4E0A\u4F20",
+          lede: (d.type || d.scope) === "\u90E8\u95E8" ? "\u90E8\u95E8\u4F1A\u8BAE\u8FDB\u90E8\u95E8\u7BA1\u7406\u77E5\u8BC6\u5E93\u3002\u5FC5\u987B\u9009\u5E26\u7F16\u53F7\u7684\u90E8\u95E8\uFF0C\u518D\u4E0A\u4F20\u3002" : d.type || d.scope ? "\u9879\u76EE\u4F1A\u8BAE\u8FDB\u540C\u4E00\u4E2A\u77E5\u8BC6\u5E93\u3002\u5FC5\u987B\u9009\u5E26\u7F16\u53F7\u7684\u9879\u76EE\uFF0C\u518D\u4E0A\u4F20\u3002" : "\u5148\u9009\u8FD9\u573A\u4F1A\u7684\u7C7B\u578B\uFF0C\u518D\u4E0A\u4F20\u5230\u5BF9\u5E94\u77E5\u8BC6\u5E93\u3002\u4E2A\u4EBA\u4F1A\u8BAE\u4E0D\u80FD\u4E0A\u4F20\u3002\u9879\u76EE\u548C\u90E8\u95E8\u90FD\u5FC5\u987B\u6709\u7F16\u53F7\u3002",
           onClose: closeUploadGate
         },
         d.type || d.scope ? null : e2(
@@ -8750,10 +8840,9 @@
               disabled: pickBusy,
               onClick: () => {
                 setPickType(s);
-                if (s !== "\u9879\u76EE") {
-                  setPickName("");
-                  setAddingPick(false);
-                }
+                setPickName("");
+                setPickQuery("");
+                setAddingPick(false);
               }
             }, s))
           )
@@ -8774,13 +8863,11 @@
             (() => {
               const q = String(pickQuery || "").trim().toLowerCase();
               const rows = unionProjects(d.projects || [], remoteProjects).filter((p) => {
+                if (!String(p.code || "").trim()) return false;
                 if (!q) return true;
                 return String(p.name || "").toLowerCase().includes(q) || String(p.code || "").toLowerCase().includes(q);
               });
-              if (pickName && !rows.some((p) => p.name === pickName) && !q) {
-                rows.unshift({ name: pickName, code: "" });
-              }
-              const pills = rows.map((p) => e2("button", {
+              return rows.map((p) => e2("button", {
                 type: "button",
                 key: "pick-" + p.name,
                 className: pickName === p.name ? "on" : "",
@@ -8791,34 +8878,53 @@
                   rememberProject(p);
                 }
               }, p.name + (p.code ? " \xB7 " + p.code : "")));
-              pills.push(addingPick ? e2(InlineComposer, {
-                key: "pick-in",
-                compact: true,
-                placeholder: "\u9879\u76EE\u540D",
-                submitLabel: "\u786E\u5B9A",
-                onSubmit: (name) => {
-                  const n = String(name || "").trim();
-                  if (n) setPickName(n);
-                  setAddingPick(false);
-                },
-                onCancel: () => setAddingPick(false)
-              }) : e2("button", {
-                type: "button",
-                className: "quiet",
-                key: "pick-add",
-                disabled: pickBusy,
-                onClick: () => setAddingPick(true)
-              }, "+ \u5176\u4ED6"));
-              return pills;
             })()
-          )
+          ),
+          e2("p", { className: "hint", style: { marginTop: 6 } }, "\u53EA\u5217\u51FA\u5E26\u7F16\u53F7\u7684\u9879\u76EE\u3002")
+        ) : null,
+        pickType === "\u90E8\u95E8" ? e2(
+          "div",
+          { className: "field", key: "up-dept" },
+          e2("span", null, "\u90E8\u95E8"),
+          e2("input", {
+            type: "text",
+            placeholder: "\u8FC7\u6EE4\u540D\u79F0\u6216\u7F16\u53F7",
+            value: pickQuery,
+            onChange: (ev) => setPickQuery(ev.target.value)
+          }),
+          e2(
+            "div",
+            { className: "cat-pills" },
+            (() => {
+              const q = String(pickQuery || "").trim().toLowerCase();
+              const rows = (d.departments || []).filter((p) => {
+                if (!String(p.code || "").trim()) return false;
+                if (!q) return true;
+                return String(p.name || "").toLowerCase().includes(q) || String(p.code || "").toLowerCase().includes(q);
+              });
+              return rows.map((p) => e2("button", {
+                type: "button",
+                key: "pick-dept-" + p.code,
+                className: pickName === p.name ? "on" : "",
+                disabled: pickBusy,
+                onClick: () => setPickName(p.name)
+              }, deptChoiceLabel(p)));
+            })()
+          ),
+          e2("p", { className: "hint", style: { marginTop: 6 } }, (d.departments || []).some((p) => String(p.code || "").trim()) ? "\u4E3B\u90E8\u95E8\u548C\u5E38\u7528\u90E8\u95E8\u6392\u5728\u524D\u9762\u3002" : "\u8FD8\u6CA1\u6709\u90E8\u95E8\u3002\u5148\u5230\u8BBE\u7F6E \u2192 \u79F0\u547C \u2192 \u90E8\u95E8\uFF0C\u70B9\u540C\u6B65\u90E8\u95E8\u3002")
         ) : null,
         e2(
           "div",
           { className: "sheet-actions" },
           e2("button", {
             className: "primary",
-            disabled: pickBusy || !pickType || pickType === "\u9879\u76EE" && !String(pickName || "").trim(),
+            disabled: pickBusy || !pickType || (pickType === "\u9879\u76EE" || pickType === "\u90E8\u95E8") && !(() => {
+              const name = String(pickName || "").trim();
+              if (!name) return false;
+              const rows = pickType === "\u90E8\u95E8" ? d.departments || [] : unionProjects(d.projects || [], remoteProjects);
+              const hit = rows.find((p) => p.name === name);
+              return !!(hit && String(hit.code || "").trim());
+            })(),
             onClick: submitUploadGate
           }, pickBusy ? "\u4E0A\u4F20\u4E2D\u2026" : uploadBtnLabel(pickType) || "\u4E0A\u4F20"),
           e2("button", { className: "quiet", disabled: pickBusy, onClick: closeUploadGate }, "\u53D6\u6D88")
@@ -8830,8 +8936,9 @@
           const who = pubRemote && pubRemote.uploadedBy;
           const when = pubRemote && pubRemote.uploadedAt ? fmtDateTime(Date.parse(pubRemote.uploadedAt)) : "";
           const whoWhen = [who, when].filter(Boolean).join(" \xB7 ");
-          if (whoWhen) return "\u77E5\u8BC6\u5E93\u91CC\u5DF2\u6709\u8FD9\u7BC7\uFF08" + whoWhen + "\uFF09\u3002\u8986\u76D6\u4F1A\u6362\u6210\u4F60\u8FD9\u4EFD\u603B\u7ED3\u548C\u5F85\u529E\u3002";
-          return "\u77E5\u8BC6\u5E93\u91CC\u5DF2\u6709\u8FD9\u7BC7\u3002\u8986\u76D6\u4F1A\u6362\u6210\u4F60\u8FD9\u4EFD\u603B\u7ED3\u548C\u5F85\u529E\u3002";
+          if (pubRemote && pubRemote.gateway === false) return "\u672C\u673A\u5DF2\u6807\u8BB0\u4E0A\u4F20\u8FC7\uFF08\u65E7 RAGFlow \u8BB0\u5F55\uFF09\u3002\u8986\u76D6\u4F1A\u91CD\u65B0\u5F52\u6863\u5230\u77E5\u8BC6\u5E93\u7F51\u5173\u3002";
+          if (whoWhen) return "\u672C\u673A\u5DF2\u6807\u8BB0\u4E0A\u4F20\u8FC7\uFF08" + whoWhen + "\uFF09\u3002\u8986\u76D6\u4F1A\u5148\u64A4\u56DE\u65E7\u7A3F\uFF0C\u518D\u63D0\u4EA4\u4F60\u8FD9\u4EFD\u603B\u7ED3\u548C\u5F85\u529E\u3002";
+          return "\u672C\u673A\u5DF2\u6807\u8BB0\u4E0A\u4F20\u8FC7\u3002\u8986\u76D6\u4F1A\u5148\u64A4\u56DE\u65E7\u7A3F\uFF0C\u518D\u63D0\u4EA4\u4F60\u8FD9\u4EFD\u603B\u7ED3\u548C\u5F85\u529E\u3002";
         })(),
         confirmLabel: "\u8986\u76D6",
         danger: true,
@@ -9218,7 +9325,7 @@
                     /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(SourceMark, { source: x.source, provider: x.provider }),
                     x.title
                   ] }),
-                  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "meta", children: [fmtShort(x.time), fmtDuration(x.durationMs), x.projectName || (x.tags || [])[0], companyMark(x)].filter(Boolean).join(" \xB7 ") })
+                  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "meta", children: [fmtShort(x.time), fmtDuration(x.durationMs), x.projectName || x.departmentName || (x.tags || [])[0], companyMark(x)].filter(Boolean).join(" \xB7 ") })
                 ]
               },
               x.taskUuid
@@ -9708,6 +9815,7 @@
   var GLOSSARY_TABS = [
     { id: "people", label: "\u4EBA", add: "+ \u4EBA", namePh: "\u6B63\u5F0F\u59D3\u540D", aliasPh: "\u52C7\u54E5\u3001\u6797\u54E5" },
     { id: "projects", label: "\u9879\u76EE", add: "+ \u9879\u76EE", namePh: "\u6B63\u5F0F\u9879\u76EE\u540D", aliasPh: "\u7B80\u79F0\u3001\u53E3\u8FF0", codePh: "\u7F16\u53F7\uFF0C\u53EF\u7A7A" },
+    { id: "departments", label: "\u90E8\u95E8", add: "+ \u90E8\u95E8", namePh: "\u90E8\u95E8\u540D\u79F0", aliasPh: "\u7B80\u79F0\u3001\u53E3\u8FF0", codePh: "\u90E8\u95E8\u7F16\u53F7" },
     { id: "terms", label: "\u7528\u8BED", add: "+ \u7528\u8BED", namePh: "\u6807\u51C6\u5199\u6CD5", aliasPh: "\u542C\u9519\u3001\u8FD1\u97F3" }
   ];
   function splitAliases(v) {
@@ -9735,6 +9843,20 @@
   function foldText(s) {
     return String(s || "").trim().toLowerCase();
   }
+  function deptRank(p) {
+    if (p && p.primary) return [0, 0];
+    if (p && p.pin != null) return [1, p.pin];
+    if (p && p.member) return [2, 0];
+    return [3, 0];
+  }
+  function reindexPins(rows) {
+    const pins = rows.map((r, i) => ({ r, i })).filter(({ r }) => r.code && r.pin != null && !r.primary).sort((a, b) => a.r.pin - b.r.pin || a.i - b.i);
+    const pinAt = new Map(pins.map(({ i }, n) => [i, n]));
+    return rows.map((r, i) => {
+      if (pinAt.has(i)) return { ...r, pin: pinAt.get(i) };
+      return r.pin == null ? r : { ...r, pin: null };
+    });
+  }
   function rowMatchesQuery(row, q) {
     if (!q) return true;
     const hay = [row && row.name, row && row.code, row && row.aliases].map(foldText).join(" ");
@@ -9754,6 +9876,7 @@
     const [err, setErr] = (0, import_react5.useState)(null);
     const [people, setPeople] = (0, import_react5.useState)([]);
     const [projects, setProjects] = (0, import_react5.useState)([]);
+    const [departments, setDepartments] = (0, import_react5.useState)([]);
     const [terms, setTerms] = (0, import_react5.useState)([]);
     const [glossaryKind, setGlossaryKind] = (0, import_react5.useState)(() => {
       try {
@@ -9763,14 +9886,13 @@
       }
     });
     const [llm, setLlm] = (0, import_react5.useState)({ preset: "deepseek", baseUrl: "", model: "", apiKey: "" });
-    const [kb, setKb] = (0, import_react5.useState)({ url: "", apiKey: "", datasets: { mgmt: "", ops: "", project: "", dept: "" } });
     const [testing, setTesting] = (0, import_react5.useState)("");
     const [testMsg, setTestMsg] = (0, import_react5.useState)("");
     const [logs, setLogs] = (0, import_react5.useState)([]);
     const [mcpBusy, setMcpBusy] = (0, import_react5.useState)(false);
     const [writebackBusy, setWritebackBusy] = (0, import_react5.useState)(false);
     const [classifyBusy, setClassifyBusy] = (0, import_react5.useState)(false);
-    const [classify, setClassify] = (0, import_react5.useState)({ projectFromGlossary: true, rules: [] });
+    const [classify, setClassify] = (0, import_react5.useState)({ projectFromGlossary: true, deptFromGlossary: true, rules: [] });
     const [confirmClassify, setConfirmClassify] = (0, import_react5.useState)(false);
     const [confirmRotate, setConfirmRotate] = (0, import_react5.useState)(false);
     const [confirmFull, setConfirmFull] = (0, import_react5.useState)(false);
@@ -9820,21 +9942,25 @@
     const apply = (r) => {
       setSt(r);
       setPeople(r.people || []);
-      setProjects((r.projects || []).map((p) => ({ name: p.name || "", aliases: p.aliases || "", code: p.code || "" })));
+      setProjects((r.projects || []).map((p) => ({ name: p.name || "", aliases: p.aliases || "", code: p.code || "", synced: !!p.synced })));
+      setDepartments((r.departments || []).map((p) => ({
+        name: p.name || "",
+        aliases: p.aliases || "",
+        code: p.code || "",
+        synced: !!p.synced,
+        primary: !!p.primary,
+        pin: Number.isInteger(p.pin) ? p.pin : null,
+        member: !!p.member
+      })));
       setTerms(r.terms || []);
       const L = r.llm || {};
       setLlm({ preset: L.preset || "deepseek", baseUrl: L.baseUrl || "", model: L.model || "", apiKey: "" });
-      const K = r.kb || {};
-      setKb({
-        url: K.url || "",
-        apiKey: "",
-        datasets: Object.assign({ mgmt: "", ops: "", project: "", dept: "" }, K.datasets || {})
-      });
       const H = r.ht || {};
       setHt({ url: H.url || "", apiKey: "" });
       const C = r.classify || {};
       setClassify({
         projectFromGlossary: C.projectFromGlossary !== false,
+        deptFromGlossary: C.deptFromGlossary !== false,
         rules: Array.isArray(C.rules) ? C.rules : []
       });
     };
@@ -9872,6 +9998,7 @@
     const setKindRows = (kind, next) => {
       if (kind === "people") setPeople(next);
       else if (kind === "projects") setProjects(next);
+      else if (kind === "departments") setDepartments(next);
       else setTerms(next);
     };
     const persistKind = (kind, next) => {
@@ -9929,35 +10056,116 @@
         toast("\u5DF2\u4FDD\u5B58");
       }).catch((er) => toast(String(er && er.message || er)));
     };
-    const saveKb = () => {
-      const body = { url: kb.url, datasets: kb.datasets };
-      if (kb.apiKey.trim()) body.apiKey = kb.apiKey.trim();
-      api("/api/settings", { kb: body }).then((r) => {
-        apply(r);
-        toast("\u5DF2\u4FDD\u5B58");
-      }).catch((er) => toast(String(er && er.message || er)));
-    };
     const saveHt = () => {
       const body = { url: ht.url };
       if (ht.apiKey.trim()) body.apiKey = ht.apiKey.trim();
       api("/api/settings", { ht: body }).then((r) => {
         apply(r);
         toast("\u5DF2\u4FDD\u5B58");
+        try {
+          window.dispatchEvent(new Event("ma-identity"));
+        } catch {
+        }
       }).catch((er) => toast(String(er && er.message || er)));
     };
     const testHt = () => {
       setTesting("ht");
       setHtMsg("");
-      api("/api/settings/ht-test", {}).then((r) => {
+      Promise.all([
+        api("/api/settings/ht-test", {}),
+        api("/api/identity").catch((er) => ({ error: String(er && er.message || er) }))
+      ]).then(([r, id]) => {
         if (!r.ok) {
           setHtMsg(r.error || "\u4E0D\u901A");
           return;
         }
         const bits = [];
-        if (r.caller) bits.push(r.caller);
+        if (id && id.name) bits.push(id.name);
+        else if (r.caller) bits.push(r.caller);
         bits.push("\u89C1\u5230 " + (r.count || 0) + " \u4E2A\u9879\u76EE");
+        if (id && id.error) bits.push(id.error);
         setHtMsg("\u53EF\u7528 \xB7 " + bits.join(" \xB7 "));
+        if (id && id.name) {
+          try {
+            window.dispatchEvent(new Event("ma-identity"));
+          } catch {
+          }
+        }
       }).catch((er) => setHtMsg(String(er && er.message || er))).finally(() => setTesting(""));
+    };
+    const saveDeptOrder = (next) => {
+      setDepartments(next);
+      const primary = next.find((r) => r.primary && r.code);
+      const pinnedIds = next.filter((r) => r.code && r.pin != null && !r.primary).sort((a, b) => a.pin - b.pin).map((r) => r.code);
+      api("/api/settings", {
+        departmentPrefs: {
+          primaryId: primary ? primary.code : "",
+          primaryTouched: true,
+          pinnedIds
+        }
+      }).then(apply).catch((er) => toast(String(er && er.message || er)));
+    };
+    const togglePrimary = (i) => {
+      const row = departments[i];
+      if (!row || !String(row.code || "").trim()) {
+        toast("\u5148\u586B\u5199\u90E8\u95E8\u7F16\u53F7");
+        return;
+      }
+      const on = !row.primary;
+      const next = departments.map((r, j) => {
+        if (j === i) return { ...r, primary: on, pin: on ? null : r.pin };
+        if (on && r.primary) return { ...r, primary: false };
+        return r;
+      });
+      saveDeptOrder(reindexPins(next));
+    };
+    const togglePin = (i) => {
+      const row = departments[i];
+      if (!row || !String(row.code || "").trim() || row.primary) return;
+      const next = departments.slice();
+      if (row.pin != null) next[i] = { ...row, pin: null };
+      else {
+        const max = departments.reduce((m, r) => r.pin != null ? Math.max(m, r.pin) : m, -1);
+        next[i] = { ...row, pin: max + 1 };
+      }
+      saveDeptOrder(reindexPins(next));
+    };
+    const movePin = (i, dir) => {
+      const pins = departments.map((r, idx) => ({ r, idx })).filter(({ r }) => r.pin != null && !r.primary).sort((a2, b2) => a2.r.pin - b2.r.pin);
+      const pos = pins.findIndex(({ idx }) => idx === i);
+      const swap = pos + dir;
+      if (pos < 0 || swap < 0 || swap >= pins.length) return;
+      const next = departments.slice();
+      const a = pins[pos];
+      const b = pins[swap];
+      next[a.idx] = { ...a.r, pin: b.r.pin };
+      next[b.idx] = { ...b.r, pin: a.r.pin };
+      saveDeptOrder(reindexPins(next));
+    };
+    const syncDepartments = () => {
+      setTesting("dept-sync");
+      setHtMsg("");
+      api("/api/settings/departments-sync", {}).then((r) => {
+        apply(r);
+        const im = r.import || {};
+        const who = r.name ? r.name + " \xB7 " : "";
+        const parts = [];
+        if (im.matched != null) parts.push("\u90E8\u95E8 " + im.matched);
+        if (im.added) parts.push("\u65B0\u589E " + im.added);
+        if (im.updated) parts.push("\u66F4\u65B0 " + im.updated);
+        if (im.skipped) parts.push("\u672A\u53D8 " + im.skipped);
+        const text = who + (parts.length ? "\u5DF2\u540C\u6B65 \xB7 " + parts.join("\uFF0C") : "\u6CA1\u6709\u65B0\u90E8\u95E8");
+        setHtMsg(text);
+        toast(text);
+        try {
+          window.dispatchEvent(new Event("ma-identity"));
+        } catch {
+        }
+      }).catch((er) => {
+        const msg = String(er && er.message || er);
+        setHtMsg(msg);
+        toast(msg);
+      }).finally(() => setTesting(""));
     };
     const syncHtProjects = () => {
       setTesting("ht-sync");
@@ -10035,15 +10243,24 @@
     if (err) return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "page", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "empty", children: err }) });
     if (!st) return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "page", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "empty", children: "\u52A0\u8F7D\u4E2D\u2026" }) });
     const llmHint = st.llm && st.llm.envLocked ? "\u5F53\u524D\u7531\u73AF\u5883\u53D8\u91CF\u8986\u76D6\u8BBE\u7F6E\u9875\u3002" : st.llm && st.llm.source === "dsh" ? "\u5BC6\u94A5\u4ECD\u6765\u81EA\u672C\u673A DSH \u51ED\u636E\uFF0C\u4FDD\u5B58\u540E\u6539\u7528\u8BBE\u7F6E\u3002" : "";
-    const lists = { people, projects, terms };
+    const lists = { people, projects, departments, terms };
     const kindMeta = GLOSSARY_TABS.find((x) => x.id === glossaryKind) || GLOSSARY_TABS[0];
+    const hasCode = kindMeta.id === "projects" || kindMeta.id === "departments";
     const kindRows = lists[kindMeta.id] || [];
     const shared = sharedAliasSet(kindRows);
     const filterQ = foldText(glossaryQuery);
     const visibleRows = kindRows.map((p, i) => ({ p, i })).filter(({ p }) => rowMatchesQuery(p, filterQ));
-    const peoplePane = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "page-inner" + (kindMeta.id === "projects" ? " wide" : ""), children: [
+    const shownRows = kindMeta.id === "departments" ? visibleRows.slice().sort((a, b) => {
+      const ra = deptRank(a.p);
+      const rb = deptRank(b.p);
+      if (ra[0] !== rb[0]) return ra[0] - rb[0];
+      if (ra[1] !== rb[1]) return ra[1] - rb[1];
+      return String(a.p.name || "").localeCompare(String(b.p.name || ""), "zh");
+    }) : visibleRows;
+    const pinnedSpots = departments.map((r, idx) => ({ r, idx })).filter(({ r }) => r.pin != null && !r.primary).sort((a, b) => a.r.pin - b.r.pin);
+    const peoplePane = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "page-inner" + (hasCode ? " wide" : ""), children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h1", { children: "\u79F0\u547C" }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: glossaryKind === "projects" ? "\u6B63\u5F0F\u540D\u7528\u4E8E\u4E0A\u4F20\u548C\u68C0\u7D22\u3002\u53EF\u4ECE\u5916\u90E8\u7CFB\u7EDF\u540C\u6B65\u4F60\u53EF\u89C1\u7684\u9879\u76EE\uFF0C\u6216\u5BFC\u5165\u9879\u76EE\u6E05\u5355 CSV\u3002" : "\u603B\u7ED3\u65F6\u628A\u53E3\u8BED\u3001\u7B80\u79F0\u548C\u542C\u9519\u843D\u5230\u6B63\u5F0F\u5199\u6CD5\u3002" }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: glossaryKind === "projects" ? "\u6B63\u5F0F\u540D\u7528\u4E8E\u4E0A\u4F20\u548C\u68C0\u7D22\u3002\u53EF\u4ECE\u5916\u90E8\u7CFB\u7EDF\u540C\u6B65\u4F60\u53EF\u89C1\u7684\u9879\u76EE\uFF0C\u6216\u5BFC\u5165\u9879\u76EE\u6E05\u5355 CSV\u3002\u540C\u6B65\u6765\u7684\u540D\u79F0\u548C\u7F16\u53F7\u4E0D\u80FD\u6539\uFF0C\u522B\u540D\u53EF\u4EE5\u6539\u3002" : glossaryKind === "departments" ? "\u90E8\u95E8\u540D\u79F0\u548C\u7F16\u53F7\u7528\u4E8E\u5F52\u7C7B\u3002\u4E3B\u90E8\u95E8\u6392\u7B2C\u4E00\uFF0C\u5E38\u7528\u90E8\u95E8\u6309\u4F60\u7684\u987A\u5E8F\u6392\u5728\u540E\u9762\u3002\u540C\u6B65\u6765\u7684\u540D\u79F0\u548C\u7F16\u53F7\u4E0D\u80FD\u6539\uFF0C\u522B\u540D\u53EF\u4EE5\u6539\u3002" : "\u603B\u7ED3\u65F6\u628A\u53E3\u8BED\u3001\u7B80\u79F0\u548C\u542C\u9519\u843D\u5230\u6B63\u5F0F\u5199\u6CD5\u3002" }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "filters", children: GLOSSARY_TABS.map((x) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
         "button",
         {
@@ -10062,7 +10279,7 @@
             "input",
             {
               type: "text",
-              placeholder: kindMeta.id === "projects" ? "\u6309\u540D\u79F0\u3001\u7F16\u53F7\u3001\u522B\u540D\u7B5B\u9009" : "\u6309\u540D\u79F0\u3001\u522B\u540D\u7B5B\u9009",
+              placeholder: hasCode ? "\u6309\u540D\u79F0\u3001\u7F16\u53F7\u3001\u522B\u540D\u7B5B\u9009" : "\u6309\u540D\u79F0\u3001\u522B\u540D\u7B5B\u9009",
               value: glossaryQuery,
               onChange: (ev) => setGlossaryQuery(ev.target.value)
             }
@@ -10070,35 +10287,44 @@
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "n", children: filterQ && visibleRows.length !== kindRows.length ? "\u663E\u793A " + visibleRows.length + " / " + kindRows.length : "\u5171 " + kindRows.length + " \u4E2A" })
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "glossary-list", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "person person-head" + (kindMeta.id === "projects" ? " has-code" : ""), children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "person person-head" + (hasCode ? " has-code" : "") + (kindMeta.id === "departments" ? " has-dept" : ""), children: [
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { children: "\u540D\u79F0" }),
-            kindMeta.id === "projects" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { children: "\u7F16\u53F7" }) : null,
+            hasCode ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { children: "\u7F16\u53F7" }) : null,
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { children: "\u522B\u540D" }),
+            kindMeta.id === "departments" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { children: "\u6392\u5E8F" }) : null,
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", {})
           ] }),
-          visibleRows.length ? visibleRows.map(({ p, i }) => {
+          shownRows.length ? shownRows.map(({ p, i }) => {
             const dup = splitAliases(p.aliases).some((a) => shared.has(a.toLowerCase()));
-            return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "person" + (kindMeta.id === "projects" ? " has-code" : ""), children: [
+            const pinPos = pinnedSpots.findIndex(({ idx }) => idx === i);
+            const locked = !!p.synced && (kindMeta.id === "projects" || kindMeta.id === "departments");
+            return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "person" + (hasCode ? " has-code" : "") + (kindMeta.id === "departments" ? " has-dept" : ""), children: [
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
                 "input",
                 {
                   type: "text",
                   placeholder: kindMeta.namePh,
                   value: p.name,
+                  readOnly: locked,
+                  title: locked ? "\u6765\u81EA\u5916\u90E8\u7CFB\u7EDF\uFF0C\u4E0D\u80FD\u6539" : void 0,
                   onChange: (ev) => {
+                    if (locked) return;
                     const n = kindRows.slice();
                     n[i] = { ...n[i], name: ev.target.value };
                     setKindRows(kindMeta.id, n);
                   }
                 }
               ),
-              kindMeta.id === "projects" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              hasCode ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
                 "input",
                 {
                   type: "text",
                   placeholder: kindMeta.codePh,
                   value: p.code || "",
+                  readOnly: locked,
+                  title: locked ? "\u6765\u81EA\u5916\u90E8\u7CFB\u7EDF\uFF0C\u4E0D\u80FD\u6539" : void 0,
                   onChange: (ev) => {
+                    if (locked) return;
                     const n = kindRows.slice();
                     n[i] = { ...n[i], code: ev.target.value };
                     setKindRows(kindMeta.id, n);
@@ -10121,7 +10347,13 @@
                 ),
                 dup ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dup", children: "\u4E0D\u552F\u4E00" }) : null
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { className: "quiet", onClick: () => persistKind(kindMeta.id, kindRows.filter((_, j) => j !== i)), children: "\u5220\u9664" })
+              kindMeta.id === "departments" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dept-rank", children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { type: "button", className: p.primary ? "on" : "", disabled: !p.code, onClick: () => togglePrimary(i), children: "\u4E3B" }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { type: "button", className: p.pin != null ? "on" : "", disabled: !p.code || p.primary, onClick: () => togglePin(i), children: "\u5E38\u7528" }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { type: "button", disabled: pinPos <= 0, onClick: () => movePin(i, -1), children: "\u4E0A\u79FB" }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { type: "button", disabled: pinPos < 0 || pinPos === pinnedSpots.length - 1, onClick: () => movePin(i, 1), children: "\u4E0B\u79FB" })
+              ] }) : null,
+              locked ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { className: "quiet", onClick: () => persistKind(kindMeta.id, kindRows.filter((_, j) => j !== i)), children: "\u5220\u9664" })
             ] }, kindMeta.id + "-" + i);
           }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("p", { className: "empty", children: [
             "\u6CA1\u6709\u5339\u914D\u300C",
@@ -10163,6 +10395,12 @@
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { className: "quiet", disabled: importBusy, onClick: () => projectFileRef.current && projectFileRef.current.click(), children: importBusy ? "\u5BFC\u5165\u4E2D\u2026" : "\u5BFC\u5165\u6E05\u5355" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("a", { className: "quiet", href: "/\u9879\u76EE\u6E05\u5355\u6A21\u677F.csv", download: "\u9879\u76EE\u6E05\u5355\u6A21\u677F.csv", children: "\u4E0B\u8F7D\u6A21\u677F" })
       ] }) : null,
+      kindMeta.id === "departments" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "block", style: { marginTop: 28 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h3", { children: "\u4ECE\u5916\u90E8\u7CFB\u7EDF\u540C\u6B65" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: "\u8BFB\u53D6\u5F53\u524D\u4EE4\u724C\u53EF\u5199\u5165\u7684\u4E1A\u52A1\u90E8\u95E8\u3002\u5DF2\u6709\u90E8\u95E8\u6309\u7F16\u53F7\u6216\u540D\u79F0\u5408\u5E76\uFF0C\u522B\u540D\u3001\u4E3B\u90E8\u95E8\u548C\u5E38\u7528\u987A\u5E8F\u90FD\u4FDD\u7559\u3002\u8FD8\u6CA1\u8BBE\u8FC7\u4E3B\u90E8\u95E8\u65F6\uFF0C\u7528\u8EAB\u4EFD\u63A5\u53E3\u91CC\u7684\u4E3B\u90E8\u95E8\u3002\u4EE4\u724C\u9700\u52FE\u9009\u300C\u8BFB\u53D6\u672C\u4EBA\u8EAB\u4EFD\u4E0E\u4E1A\u52A1\u90E8\u95E8\u300D\u3002" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { className: "quiet", disabled: testing === "dept-sync", onClick: syncDepartments, children: testing === "dept-sync" ? "\u540C\u6B65\u4E2D\u2026" : "\u540C\u6B65\u90E8\u95E8" }),
+        htMsg && tab === "people" && glossaryKind === "departments" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "status", children: htMsg }) : null
+      ] }) : null,
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "status", style: { marginTop: 28 }, children: "\u603B\u7ED3\u7528\u9ED8\u8BA4\u63D0\u70BC\u89C4\u5219\u3002" })
     ] });
     const llmPane = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "page-inner", children: [
@@ -10202,51 +10440,25 @@
     ] });
     const kbPane = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "page-inner", children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h1", { children: "\u4E0A\u4F20" }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: "\u8BE6\u60C5\u91CC\u70B9\u4E0A\u4F20\u65F6\u5199\u5165\u8FD9\u91CC\u3002\u4E00\u53F0 RAGFlow\u3001\u56DB\u4E2A\u5E93\u3002\u9879\u76EE\u4F1A\u8BAE\u8FDB\u540C\u4E00\u4E2A\u5E93\uFF0C\u7528\u9879\u76EE\u540D\uFF08\u53CA\u53EF\u9009\u7F16\u53F7\uFF09\u533A\u5206\uFF0C\u4E0D\u6309\u9879\u76EE\u62C6\u5E93\u3002" }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "field", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { children: "\u5730\u5740" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("input", { type: "text", placeholder: "RAGFlow \u5730\u5740", value: kb.url, onChange: (ev) => setKb({ ...kb, url: ev.target.value }) })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "field", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { children: "\u5BC6\u94A5" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-          "input",
-          {
-            type: "password",
-            placeholder: st.kb && st.kb.keySet ? "\u5DF2\u4FDD\u5B58" : "\u516C\u53F8\u63D0\u4F9B",
-            value: kb.apiKey,
-            onChange: (ev) => setKb({ ...kb, apiKey: ev.target.value })
-          }
-        )
-      ] }),
-      KB_DS.map((d) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "field", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { children: d.label + " \xB7 dataset id" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-          "input",
-          {
-            type: "text",
-            placeholder: "RAGFlow \u6570\u636E\u96C6 ID",
-            value: kb.datasets[d.key] || "",
-            onChange: (ev) => setKb({ ...kb, datasets: { ...kb.datasets, [d.key]: ev.target.value } })
-          }
-        )
-      ] }, d.key)),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { className: "primary", onClick: saveKb, children: "\u4FDD\u5B58" }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: "\u8BE6\u60C5\u91CC\u70B9\u4E0A\u4F20\uFF0C\u4F1A\u7528\u300C\u5916\u90E8\u7CFB\u7EDF\u300D\u91CC\u7684\u516C\u53F8\u6570\u667A\u7CFB\u7EDF\u4EE4\u724C\uFF0C\u628A\u603B\u7ED3\u4EA4\u7ED9\u701A\u5C0F\u667A\u77E5\u8BC6\u5E93\u7F51\u5173\u3002\u4E0D\u518D\u76F4\u8FDE RAGFlow\uFF0C\u4E5F\u4E0D\u586B Dataset ID\u3002" }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "hint", children: "\u516C\u53F8\u7BA1\u7406 \u2192 company-management\uFF1B\u516C\u53F8\u8FD0\u8425 \u2192 company-operations\uFF1B\u9879\u76EE \u2192 project\uFF08\u5FC5\u987B\u6709\u9879\u76EE\u7F16\u53F7\uFF09\uFF1B\u90E8\u95E8 \u2192 department-management\uFF08\u5FC5\u987B\u6709\u90E8\u95E8\u7F16\u53F7\uFF09\u3002\u4E2A\u4EBA\u4F1A\u4E0D\u4E0A\u4F20\u3002" }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "hint", children: "\u70B9\u4E0A\u4F20\u5373\u786E\u8BA4\u5F52\u6863\u3002\u6D4B\u4E00\u4E0B\u4F1A\u533A\u5206\u53EF\u5F52\u6863\u548C\u4EC5\u53EF\u8BFB\uFF1B\u6CA1\u6709\u5F52\u6863\u6743\u9650\u7684\u5E93\u4F20\u4E0D\u4E0A\u53BB\u3002" }),
+      st && st.kb && st.kb.configured ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "hint", children: "\u5DF2\u63A5\u4E0A\u5916\u90E8\u7CFB\u7EDF\u4EE4\u724C\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "hint", children: "\u5148\u5230\u300C\u5916\u90E8\u7CFB\u7EDF\u300D\u586B\u5730\u5740\u548C\u4EE4\u724C\u3002" }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { className: "quiet", disabled: testing === "kb", onClick: () => {
         setTesting("kb");
         setTestMsg("");
         api("/api/settings/kb-test", {}).then((r) => {
-          setTestMsg(r.ok ? "\u53EF\u7528 \xB7 \u89C1\u5230 " + r.count + " \u4E2A\u5E93" : r.error || "\u4E0D\u901A");
+          setTestMsg(r.ok ? "\u53EF\u7528 \xB7 " + (r.detail || r.knowledgeBaseCode || "\u77E5\u8BC6\u5E93\u7F51\u5173") : r.error || "\u4E0D\u901A");
         }).catch((er) => setTestMsg(String(er && er.message || er))).finally(() => setTesting(""));
       }, children: testing === "kb" ? "\u5728\u6D4B\u2026" : "\u6D4B\u4E00\u4E0B" }),
       testMsg && tab === "kb" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "status", children: testMsg }) : null
     ] });
     const extPane = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "page-inner", children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h1", { children: "\u5916\u90E8\u7CFB\u7EDF" }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: "\u63A5\u516C\u53F8\u6570\u667A\u7CFB\u7EDF\uFF0C\u628A\u4F60\u6709\u6743\u770B\u7684\u9879\u76EE\u540C\u6B65\u8FDB\u79F0\u547C\u8868\u3002\u5730\u5740\u548C\u4EE4\u724C\u53EA\u5B58\u5728\u672C\u673A\u3002" }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: "\u63A5\u516C\u53F8\u6570\u667A\u7CFB\u7EDF\uFF1A\u540C\u6B65\u4F60\u6709\u6743\u770B\u7684\u9879\u76EE\u548C\u53EF\u5199\u5165\u7684\u90E8\u95E8\uFF0C\u5E76\u628A\u4F1A\u8BAE\u5F52\u6863\u5230\u77E5\u8BC6\u5E93\u7F51\u5173\u3002\u5730\u5740\u548C\u4EE4\u724C\u53EA\u5B58\u5728\u672C\u673A\u3002\u914D\u597D\u4EE4\u724C\u540E\uFF0C\u9876\u680F\u53F3\u4FA7\u4F1A\u663E\u793A\u8FD9\u4E2A\u4EE4\u724C\u5BF9\u5E94\u7684\u59D3\u540D\u3002" }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "block", children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h3", { children: "\u516C\u53F8\u6570\u667A\u7CFB\u7EDF" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: "\u4EE4\u724C\u5728\u6570\u667A\u7CFB\u7EDF\u300C\u4E2A\u4EBA\u4E2D\u5FC3 \xB7 \u7B2C\u4E09\u65B9\u5E94\u7528\u63A5\u5165\u300D\u521B\u5EFA\u3002\u540C\u6B65\u4F1A\u62C9\u5168\u90E8\u6709\u6548\u9879\u76EE\uFF0C\u672C\u5730\u522B\u540D\u4FDD\u7559\u3002" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: "\u4EE4\u724C\u5728\u6570\u667A\u7CFB\u7EDF\u300C\u4E2A\u4EBA\u4E2D\u5FC3 \xB7 \u7B2C\u4E09\u65B9\u5E94\u7528\u63A5\u5165\u300D\u521B\u5EFA\u3002\u540C\u6B65\u9879\u76EE\u4F1A\u62C9\u5168\u90E8\u6709\u6548\u9879\u76EE\u3002\u540C\u6B65\u90E8\u95E8\u9700\u8981\u4EE4\u724C\u52FE\u9009\u300C\u8BFB\u53D6\u672C\u4EBA\u8EAB\u4EFD\u4E0E\u4E1A\u52A1\u90E8\u95E8\u300D\u3002\u672C\u5730\u522B\u540D\u90FD\u4FDD\u7559\u3002" }),
         st.ht && st.ht.envLocked ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "hint", children: "\u5F53\u524D\u7531\u73AF\u5883\u53D8\u91CF\u8986\u76D6\u8BBE\u7F6E\u9875\u3002" }) : null,
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "field", children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { children: "\u5730\u5740" }),
@@ -10267,21 +10479,32 @@
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { className: "primary", onClick: saveHt, children: "\u4FDD\u5B58" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { className: "quiet", disabled: testing === "ht", onClick: testHt, children: testing === "ht" ? "\u5728\u6D4B\u2026" : "\u6D4B\u4E00\u4E0B" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { className: "quiet", disabled: testing === "ht-sync", onClick: syncHtProjects, children: testing === "ht-sync" ? "\u540C\u6B65\u4E2D\u2026" : "\u540C\u6B65\u9879\u76EE" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { className: "quiet", disabled: testing === "dept-sync", onClick: syncDepartments, children: testing === "dept-sync" ? "\u540C\u6B65\u4E2D\u2026" : "\u540C\u6B65\u90E8\u95E8" }),
         htMsg ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "status", children: htMsg }) : null
       ] })
     ] });
     const classifyPane = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "page-inner", children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h1", { children: "\u7C7B\u578B\u89C4\u5219" }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: "\u65B0\u542C\u8BB0\u5165\u5E93\u65F6\uFF0C\u6309\u4ECE\u4E0A\u5230\u4E0B\u7B2C\u4E00\u6761\u547D\u4E2D\u7684\u89C4\u5219\u586B\u5199\u7C7B\u578B\u548C\u6807\u7B7E\u3002\u9879\u76EE\u4F1A\u4F1A\u540C\u65F6\u586B\u9879\u76EE\u540D\u3002\u624B\u6539\u8FC7\u7684\u7C7B\u578B\u4E0D\u8986\u76D6\u3002\u5E93\u91CC\u5DF2\u6709\u7684\u8981\u70B9\u300C\u5957\u7528\u5230\u672A\u5B9A\u573A\u6B21\u300D\u3002" }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "filters", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-        "button",
-        {
-          className: classify.projectFromGlossary ? "on" : "",
-          onClick: () => setClassify({ ...classify, projectFromGlossary: !classify.projectFromGlossary }),
-          children: "\u8BCD\u8868\u9879\u76EE"
-        }
-      ) }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "hint", children: classify.projectFromGlossary ? "\u6807\u9898\u6216\u8BB0\u5F55\u547D\u4E2D\u79F0\u547C\u8868\u91CC\u7684\u9879\u76EE\u540D/\u522B\u540D\u65F6\uFF0C\u6807\u4E3A\u300C\u9879\u76EE\u300D\u5E76\u6253\u4E0A\u8BE5\u9879\u76EE\u540D\u3002\u89C4\u5219\u5148\u4E8E\u8FD9\u4E00\u6761\u3002" : "\u4E0D\u81EA\u52A8\u7528\u8BCD\u8868\u9879\u76EE\u540D\u8BC6\u522B\u3002" }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: "\u65B0\u542C\u8BB0\u5165\u5E93\u65F6\uFF0C\u6309\u4ECE\u4E0A\u5230\u4E0B\u7B2C\u4E00\u6761\u547D\u4E2D\u7684\u89C4\u5219\u586B\u5199\u7C7B\u578B\u548C\u6807\u7B7E\u3002\u9879\u76EE\u4F1A\u4F1A\u540C\u65F6\u586B\u9879\u76EE\u540D\u548C\u7F16\u53F7\uFF0C\u90E8\u95E8\u4F1A\u4F1A\u540C\u65F6\u586B\u90E8\u95E8\u540D\u548C\u7F16\u53F7\u3002\u624B\u6539\u8FC7\u7684\u7C7B\u578B\u4E0D\u8986\u76D6\u3002\u5E93\u91CC\u5DF2\u6709\u7684\u8981\u70B9\u300C\u5957\u7528\u5230\u672A\u5B9A\u573A\u6B21\u300D\u3002" }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "filters", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          "button",
+          {
+            className: classify.projectFromGlossary ? "on" : "",
+            onClick: () => setClassify({ ...classify, projectFromGlossary: !classify.projectFromGlossary }),
+            children: "\u8BCD\u8868\u9879\u76EE"
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          "button",
+          {
+            className: classify.deptFromGlossary ? "on" : "",
+            onClick: () => setClassify({ ...classify, deptFromGlossary: !classify.deptFromGlossary }),
+            children: "\u8BCD\u8868\u90E8\u95E8"
+          }
+        )
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "hint", children: (classify.projectFromGlossary ? "\u6807\u9898\u6216\u8BB0\u5F55\u547D\u4E2D\u79F0\u547C\u8868\u91CC\u7684\u9879\u76EE\u540D\u65F6\uFF0C\u6807\u4E3A\u300C\u9879\u76EE\u300D\u5E76\u5199\u4E0A\u7F16\u53F7\u3002" : "\u4E0D\u81EA\u52A8\u7528\u8BCD\u8868\u9879\u76EE\u540D\u8BC6\u522B\u3002") + (classify.deptFromGlossary ? "\u6CA1\u6709\u547D\u4E2D\u9879\u76EE\u65F6\uFF0C\u518D\u6309\u90E8\u95E8\u540D\u6807\u4E3A\u300C\u90E8\u95E8\u300D\u5E76\u5199\u4E0A\u90E8\u95E8\u7F16\u53F7\u3002" : "\u4E0D\u81EA\u52A8\u7528\u8BCD\u8868\u90E8\u95E8\u540D\u8BC6\u522B\u3002") + "\u89C4\u5219\u5148\u4E8E\u8BCD\u8868\u3002" }),
       (classify.rules || []).map((rule, i) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "rule", children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "rule-head", children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "n", children: i + 1 }),
@@ -10378,7 +10601,7 @@
       }).catch((er) => toast(String(er && er.message || er)));
     };
     const syncPane = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "page-inner", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h1", { children: "\u542C\u8BB0" }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h1", { children: "\u6765\u6E90" }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "lede", children: "\u9489\u9489\u3001\u98DE\u4E66\u3001\u817E\u8BAF\u8C01\u767B\u5F55\u4E86\u5C31\u62C9\u8C01\u3002\u5199\u56DE\u53EA\u4F5C\u7528\u4E8E\u652F\u6301\u6539\u6807\u9898/\u7EAA\u8981\u7684\u6765\u6E90\u3002" }),
       sourceCards.map((card) => {
         const s = sourceMap[card.id] || {};
@@ -10406,8 +10629,8 @@
         confirmFull ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
           ConfirmSheet,
           {
-            title: "\u5168\u91CF\u540C\u6B65\u542C\u8BB0",
-            lede: "\u4ECE\u5DF2\u767B\u5F55\u7684\u9489\u9489\u3001\u98DE\u4E66\u3001\u817E\u8BAF\u628A\u672C\u673A\u8FD8\u6CA1\u6709\u7684\u542C\u8BB0\u90FD\u62C9\u4E0B\u6765\u3002\u5DF2\u5728\u672C\u673A\u7684\u4E0D\u8986\u76D6\u4F60\u6539\u8FC7\u7684\u8BB0\u5F55\u548C\u9010\u5B57\u7A3F\uFF1B\u672C\u673A\u5220\u8FC7\u7684\u4E0D\u4F1A\u518D\u56DE\u6765\u3002\u672A\u767B\u5F55\u7684\u6765\u6E90\u4F1A\u8DF3\u8FC7\u3002",
+            title: "\u5168\u91CF\u540C\u6B65",
+            lede: "\u4ECE\u5DF2\u767B\u5F55\u7684\u9489\u9489\u3001\u98DE\u4E66\u3001\u817E\u8BAF\u628A\u672C\u673A\u8FD8\u6CA1\u6709\u7684\u4F1A\u8BAE\u90FD\u62C9\u4E0B\u6765\u3002\u5DF2\u5728\u672C\u673A\u7684\u4E0D\u8986\u76D6\u4F60\u6539\u8FC7\u7684\u8BB0\u5F55\u548C\u9010\u5B57\u7A3F\uFF1B\u672C\u673A\u5220\u8FC7\u7684\u4E0D\u4F1A\u518D\u56DE\u6765\u3002\u672A\u767B\u5F55\u7684\u6765\u6E90\u4F1A\u8DF3\u8FC7\u3002",
             confirmLabel: "\u5F00\u59CB\u5168\u91CF",
             busy: pulling,
             onConfirm: doFullSync,
@@ -10484,17 +10707,17 @@
       ] }, x.at + "-" + i)) }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "empty", children: "\u8FD8\u6CA1\u6709\u65E5\u5FD7\u3002" })
     ] });
     const panes = { people: peoplePane, classify: classifyPane, llm: llmPane, kb: kbPane, ext: extPane, mcp: mcpPane, sync: syncPane, ver: verPane, logs: logsPane };
-    const glossaryCount = people.length + projects.length + terms.length;
+    const glossaryCount = people.length + projects.length + departments.length + terms.length;
     const llmStatus = st.llm && st.llm.model || (st.llm && st.llm.keySet ? "\u5DF2\u914D" : "\u672A\u914D\u7F6E");
-    const kbStatus = st.kb && st.kb.filled ? st.kb.filled + "/4" : "\u672A\u586B";
+    const kbStatus = st.kb && st.kb.configured ? "\u5DF2\u63A5" : "\u672A\u914D";
     const htStatus = st.ht && st.ht.keySet ? "\u5DF2\u914D" : "\u672A\u914D";
     const mcpStatus = mcp.enabled ? "\u5F00" : "\u5173";
-    const classifyStatus = String((classify.rules || []).length || (classify.projectFromGlossary ? "\u8BCD\u8868" : "\u672A\u914D"));
+    const classifyStatus = String((classify.rules || []).length || (classify.projectFromGlossary || classify.deptFromGlossary ? "\u8BCD\u8868" : "\u672A\u914D"));
     const syncStatusLabel = pulling ? "\u540C\u6B65\u4E2D" : lastSyncLabel(syncSt) ? "\u5DF2\u540C\u6B65" : "\u672A\u540C\u6B65";
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "settings", children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("aside", { className: "cats", children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h2", { children: "\u8BBE\u7F6E" }),
-        [["people", "\u79F0\u547C", String(glossaryCount)], ["classify", "\u7C7B\u578B", classifyStatus], ["llm", "\u6A21\u578B", llmStatus], ["kb", "\u4E0A\u4F20", kbStatus], ["ext", "\u5916\u90E8\u7CFB\u7EDF", htStatus], ["mcp", "MCP", mcpStatus], ["sync", "\u542C\u8BB0", syncStatusLabel], ["ver", "\u7248\u672C", appUp && appUp.available ? "\u6709\u66F4\u65B0" : appUp && appUp.current || "\u2014"], ["logs", "\u65E5\u5FD7", String(logs.length || "")]].map(([id, label, n]) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "cat" + (tab === id ? " on" : ""), onClick: () => {
+        [["people", "\u79F0\u547C", String(glossaryCount)], ["classify", "\u7C7B\u578B", classifyStatus], ["llm", "\u6A21\u578B", llmStatus], ["kb", "\u4E0A\u4F20", kbStatus], ["ext", "\u5916\u90E8\u7CFB\u7EDF", htStatus], ["mcp", "MCP", mcpStatus], ["sync", "\u6765\u6E90", syncStatusLabel], ["ver", "\u7248\u672C", appUp && appUp.available ? "\u6709\u66F4\u65B0" : appUp && appUp.current || "\u2014"], ["logs", "\u65E5\u5FD7", String(logs.length || "")]].map(([id, label, n]) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "cat" + (tab === id ? " on" : ""), onClick: () => {
           setTab(id);
           setTestMsg("");
           setHtMsg("");
@@ -10518,6 +10741,7 @@
     const [appUp, setAppUp] = (0, import_react6.useState)(null);
     const [updOpen, setUpdOpen] = (0, import_react6.useState)(false);
     const [updBusy, setUpdBusy] = (0, import_react6.useState)(false);
+    const [who, setWho] = (0, import_react6.useState)("");
     (0, import_react6.useEffect)(() => {
       try {
         const saved = sessionStorage.getItem(STORE);
@@ -10546,6 +10770,16 @@
         setAppUp(r);
         return r;
       });
+    }, []);
+    (0, import_react6.useEffect)(() => {
+      const loadWho = () => {
+        api("/api/identity").then((r) => setWho(r && r.name || "")).catch(() => {
+        });
+      };
+      loadWho();
+      const onWho = () => loadWho();
+      window.addEventListener("ma-identity", onWho);
+      return () => window.removeEventListener("ma-identity", onWho);
     }, []);
     (0, import_react6.useEffect)(() => {
       const load = (fresh) => {
@@ -10627,7 +10861,10 @@
           /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("small", { children: "LOCAL" })
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("nav", { className: "main", children: NAV.map(([id, label]) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "button", className: page === id ? "on" : "", onClick: () => setPage(id), children: label }, id)) }),
-        appUp && appUp.available ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "top-actions", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "button", className: "sync-pill on", disabled: updBusy, onClick: () => setUpdOpen(true), children: updBusy ? "\u66F4\u65B0\u4E2D\u2026" : "\u6709\u66F4\u65B0" }) }) : null
+        who || appUp && appUp.available ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "top-actions", children: [
+          who ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "who", children: who }) : null,
+          appUp && appUp.available ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "button", className: "sync-pill on", disabled: updBusy, onClick: () => setUpdOpen(true), children: updBusy ? "\u66F4\u65B0\u4E2D\u2026" : "\u6709\u66F4\u65B0" }) : null
+        ] }) : null
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("main", { children: [
         /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "view" + (page === "meet" ? "" : " view-off"), children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(

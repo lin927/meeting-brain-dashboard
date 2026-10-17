@@ -15,6 +15,7 @@ export function App() {
   const [appUp, setAppUp] = useState(null)
   const [updOpen, setUpdOpen] = useState(false)
   const [updBusy, setUpdBusy] = useState(false)
+  const [who, setWho] = useState('')
   useEffect(() => {
     try {
       const saved = sessionStorage.getItem(STORE)
@@ -36,6 +37,15 @@ export function App() {
       setAppUp(r)
       return r
     })
+  }, [])
+  useEffect(() => {
+    const loadWho = () => {
+      api('/api/identity').then((r) => setWho((r && r.name) || '')).catch(() => {})
+    }
+    loadWho()
+    const onWho = () => loadWho()
+    window.addEventListener('ma-identity', onWho)
+    return () => window.removeEventListener('ma-identity', onWho)
   }, [])
   useEffect(() => {
     const load = (fresh) => { checkAppUp(fresh).catch(() => {}) }
@@ -107,12 +117,17 @@ export function App() {
             <button type="button" key={id} className={page === id ? 'on' : ''} onClick={() => setPage(id)}>{label}</button>
           ))}
         </nav>
-        {appUp && appUp.available
+        {who || (appUp && appUp.available)
           ? (
             <div className="top-actions">
-              <button type="button" className="sync-pill on" disabled={updBusy} onClick={() => setUpdOpen(true)}>
-                {updBusy ? '更新中…' : '有更新'}
-              </button>
+              {who ? <span className="who">{who}</span> : null}
+              {appUp && appUp.available
+                ? (
+                  <button type="button" className="sync-pill on" disabled={updBusy} onClick={() => setUpdOpen(true)}>
+                    {updBusy ? '更新中…' : '有更新'}
+                  </button>
+                )
+                : null}
             </div>
           )
           : null}

@@ -7,12 +7,6 @@ export const MEET_VIEWS = [
   { id: 'company', label: '已入库' },
 ]
 export const TYPE_FILTERS = ['公司管理', '公司运营', '项目', '部门', '个人']
-export const KB_DS = [
-  { key: 'mgmt', label: '公司管理会议' },
-  { key: 'ops', label: '公司运营会议' },
-  { key: 'project', label: '项目会议' },
-  { key: 'dept', label: '部门会议' },
-]
 export const LLM_PRESETS = [
   { id: 'deepseek', label: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' },
   { id: 'ollama', label: '本机 Ollama', baseUrl: 'http://127.0.0.1:11434/v1', model: 'qwen2.5:7b' },

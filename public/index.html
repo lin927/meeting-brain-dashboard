@@ -36,7 +36,8 @@
       display: flex; align-items: center; gap: 22px; padding: 16px 28px 12px;
       border-bottom: 1px solid var(--ink); background: var(--paper-2);
     }
-    .top-actions { margin-left: auto; display: flex; align-items: center; }
+    .top-actions { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+    .who { font-size: 14px; letter-spacing: 0.08em; color: var(--ink); }
     .brand { font-family: "Noto Serif SC", serif; font-weight: 700; font-size: 22px; letter-spacing: 0.14em; }
     .brand small {
       display: block; font-family: "IBM Plex Mono", monospace; font-size: 10px;
@@ -263,7 +264,18 @@
     .more-row { padding: 10px 8px 18px; }
     .person { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px dashed var(--rule); }
     .person.has-code { grid-template-columns: minmax(280px, 2.8fr) minmax(140px, 0.7fr) minmax(140px, 1fr) auto; }
+    .person.has-dept { grid-template-columns: minmax(180px, 2fr) minmax(108px, 0.6fr) minmax(120px, 0.9fr) auto auto; }
+    .dept-rank { display: flex; align-items: center; gap: 2px; }
+    .dept-rank button {
+      border: 0; background: transparent; color: var(--ink-soft); cursor: pointer;
+      font: inherit; font-size: 12px; padding: 4px 6px;
+    }
+    .dept-rank button.on { color: var(--ink); font-weight: 600; background: #efe6d6; }
+    .dept-rank button:disabled { opacity: 0.35; cursor: default; }
     .person input { min-width: 0; }
+    .person input[readonly] {
+      background: transparent; border-color: transparent; color: var(--ink); cursor: default;
+    }
     .person .alias-cell { display: flex; align-items: center; gap: 6px; min-width: 0; }
     .person .alias-cell input { width: auto; flex: 1; min-width: 0; }
     .person .dup { font-size: 11px; color: var(--vermilion); flex-shrink: 0; }

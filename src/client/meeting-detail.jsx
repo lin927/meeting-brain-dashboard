@@ -5,6 +5,11 @@ import { ConfirmSheet, InlineComposer, Md, SheetFrame, CheckMark, SourceMark, Ti
 
 const e = React.createElement
 
+function deptChoiceLabel(p) {
+  const name = p && p.primary ? ('主 ' + p.name) : ((p && p.name) || '')
+  return name + (p && p.code ? (' · ' + p.code) : '')
+}
+
 function foldProject(s) {
   return String(s || '').trim().toLowerCase()
 }
@@ -56,6 +61,7 @@ export function MeetingDetail(props) {
   const [txDraft, setTxDraft] = React.useState('')
   const [scope, setScope] = React.useState('')
   const [projectName, setProjectName] = React.useState('')
+  const [departmentName, setDepartmentName] = React.useState('')
   const [addingProject, setAddingProject] = React.useState(false)
   const [editProjectQuery, setEditProjectQuery] = React.useState('')
   const [tags, setTags] = React.useState([])
@@ -101,6 +107,7 @@ export function MeetingDetail(props) {
         setDeep(r.deepSummary || '')
         setScope(r.type || r.scope || '')
         setProjectName(r.projectName || '')
+        setDepartmentName(r.departmentName || '')
         setTags(r.tags || [])
       }
     }).catch((e) => setErr(String(e && e.message || e)))
@@ -112,16 +119,28 @@ export function MeetingDetail(props) {
       setD((prev) => prev ? { ...prev, projects: items } : prev)
     }).catch(() => {})
   }, [])
+  const refreshDepartments = React.useCallback(() => {
+    api('/api/departments').then((r) => {
+      const items = (r && r.items) || []
+      setD((prev) => prev ? { ...prev, departments: items } : prev)
+    }).catch(() => {})
+  }, [])
   const wasActive = React.useRef(!!active)
   React.useEffect(() => {
     const now = !!active
     const became = now && !wasActive.current
     wasActive.current = now
-    if (became) refreshProjects()
-  }, [active, refreshProjects])
+    if (became) {
+      refreshProjects()
+      refreshDepartments()
+    }
+  }, [active, refreshProjects, refreshDepartments])
   React.useEffect(() => {
-    if (editing || confirmUploadGate) refreshProjects()
-  }, [editing, confirmUploadGate, refreshProjects])
+    if (editing || confirmUploadGate) {
+      refreshProjects()
+      refreshDepartments()
+    }
+  }, [editing, confirmUploadGate, refreshProjects, refreshDepartments])
   const editQDebounced = useDebounced(editProjectQuery, 280)
   const pickQDebounced = useDebounced(pickQuery, 280)
   React.useEffect(() => {
@@ -261,7 +280,7 @@ export function MeetingDetail(props) {
     }
     setConfirmSharedTitle(false)
     setSaving(true)
-    const body = { id: uuid, title: String(title || '').trim() || d.title, attendees, type: scope, tags, projectName }
+    const body = { id: uuid, title: String(title || '').trim() || d.title, attendees, type: scope, tags, projectName, departmentName }
     if (opts && opts.skipDingTalk) body.skipDingTalk = true
     api('/api/meeting', body, 'PATCH').then((r) => {
       setD(r); setEditing(false)
@@ -303,9 +322,11 @@ export function MeetingDetail(props) {
       }).catch((err) => toast(String(err && err.message || err))).finally(() => setPubBusy(false))
       return
     }
-    if (!t || (t === '项目' && !String(d.projectName || '').trim())) {
-      setPickType(t === '项目' ? '项目' : '')
-      setPickName('')
+    const projectMissing = t === '项目' && (!String(d.projectName || '').trim() || !String(d.projectCode || '').trim())
+    const departmentMissing = t === '部门' && (!String(d.departmentName || '').trim() || !String(d.departmentId || '').trim())
+    if (!t || projectMissing || departmentMissing) {
+      setPickType(t === '项目' || t === '部门' ? t : '')
+      setPickName(t === '项目' ? String(d.projectName || '') : (t === '部门' ? String(d.departmentName || '') : ''))
       setPickQuery('')
       setAddingPick(false)
       setConfirmUploadGate(true)
@@ -325,14 +346,33 @@ export function MeetingDetail(props) {
     const type = String(pickType || '').trim()
     const name = String(pickName || '').trim()
     if (!type || pickBusy || pubBusy) return
-    if (type === '项目' && !name) return
+    if ((type === '项目' || type === '部门') && !name) return
+    const rows = type === '部门' ? (d.departments || []) : unionProjects(d.projects || [], remoteProjects)
+    const picked = (type === '项目' || type === '部门') ? rows.find((p) => p.name === name) : null
+    const code = String((picked && picked.code) || '').trim()
+    if (type === '项目' && !code) {
+      toast('项目归档必须有编号，从称呼表选带编号的项目')
+      return
+    }
+    if (type === '部门' && !code) {
+      toast('部门归档必须有编号，从称呼表选带编号的部门')
+      return
+    }
     setPickBusy(true)
     const body = { id: uuid, type }
-    if (type === '项目') body.projectName = name
+    if (type === '项目') {
+      body.projectName = name
+      body.projectCode = code
+    }
+    if (type === '部门') {
+      body.departmentName = name
+      body.departmentId = code
+    }
     api('/api/meeting', body, 'PATCH').then((r) => {
       setD(r)
       setScope((r && (r.type || r.scope)) || type)
-      setProjectName((r && r.projectName) || name)
+      setProjectName((r && r.projectName) || (type === '项目' ? name : ''))
+      setDepartmentName((r && r.departmentName) || (type === '部门' ? name : ''))
       setConfirmUploadGate(false)
       setPickType('')
       setPickName('')
@@ -376,6 +416,7 @@ export function MeetingDetail(props) {
       setDeep((r && r.deepSummary) || '')
       setScope((r && (r.type || r.scope)) || '')
       setProjectName((r && r.projectName) || '')
+      setDepartmentName((r && r.departmentName) || '')
       setTags((r && r.tags) || [])
       toast((r && r.refresh && r.refresh.message) || ('已从' + fromLabel + '重拉'))
       if (onChanged) onChanged()
@@ -397,10 +438,13 @@ export function MeetingDetail(props) {
         setD(m)
         setScope((m.type || m.scope) || '')
         setProjectName((m.projectName) || '')
+        setDepartmentName((m.departmentName) || '')
         setTags(m.tags || [])
       }
       const hit = r && r.items && r.items[0]
-      toast(hit ? ('已标为' + hit.type + (hit.project ? ' · ' + hit.project : '') + (hit.tags && hit.tags.length ? ' · ' + hit.tags.join('、') : '')) : '没有规则命中')
+      const named = hit ? (hit.project || hit.department || '') : ''
+      const extraTags = hit ? (hit.tags || []).filter((t) => t !== named) : []
+      toast(hit ? ('已标为' + hit.type + (named ? ' · ' + named : '') + (extraTags.length ? ' · ' + extraTags.join('、') : '')) : '没有规则命中')
       if (onChanged) onChanged()
     }).catch((err) => toast(String(err && err.message || err))).finally(() => setClassifyBusy(false))
   }
@@ -468,6 +512,7 @@ export function MeetingDetail(props) {
           setAttendees((d && d.attendees) || '')
           setScope((d && (d.type || d.scope)) || '')
           setProjectName((d && d.projectName) || '')
+          setDepartmentName((d && d.departmentName) || '')
           setEditProjectQuery('')
           setTags((d && d.tags) || [])
           setEditing(false)
@@ -502,11 +547,12 @@ export function MeetingDetail(props) {
       ]
   const pickScope = (s) => {
     setScope(s)
+    setEditProjectQuery('')
     if (s !== '项目') {
       setProjectName('')
       setAddingProject(false)
-      setEditProjectQuery('')
     }
+    if (s !== '部门') setDepartmentName('')
   }
   const projectHits = (() => {
     const q = String(editProjectQuery || '').trim().toLowerCase()
@@ -521,6 +567,18 @@ export function MeetingDetail(props) {
       String(p.name || '').toLowerCase().includes(q) || String(p.code || '').toLowerCase().includes(q)
     ))
     const cap = 12
+    return { q, list: matched.slice(0, cap), more: Math.max(0, matched.length - cap) }
+  })()
+  const departmentHits = (() => {
+    const q = String(editProjectQuery || '').trim().toLowerCase()
+    const rows = (d.departments || []).slice()
+    if (departmentName && !rows.some((p) => p.name === departmentName)) {
+      rows.unshift({ name: departmentName, code: '' })
+    }
+    const matched = q
+      ? rows.filter((p) => String(p.name || '').toLowerCase().includes(q) || String(p.code || '').toLowerCase().includes(q))
+      : rows
+    const cap = 24
     return { q, list: matched.slice(0, cap), more: Math.max(0, matched.length - cap) }
   })()
   const tagRow = editing
@@ -586,6 +644,33 @@ export function MeetingDetail(props) {
                   : (projectHits.more
                     ? e('p', { className: 'hint', style: { marginTop: 6 } }, '还有 ' + projectHits.more + ' 个，再写细一点。')
                     : null)))
+          : null,
+        scope === '部门'
+          ? e('div', { className: 'field', style: { marginTop: 10 }, key: 'dept' },
+              e('span', null, '部门'),
+              e('input', {
+                type: 'text',
+                placeholder: '输入名称或编号筛选',
+                value: editProjectQuery,
+                onChange: (ev) => setEditProjectQuery(ev.target.value),
+              }),
+              e('div', { className: 'cat-pills' },
+                e('button', {
+                  type: 'button', key: 'dept-none', className: !departmentName ? 'on' : '',
+                  onClick: () => setDepartmentName(''),
+                }, '未标'),
+                departmentHits.list.map((p) => e('button', {
+                  type: 'button', key: 'dept-' + (p.code || p.name), className: departmentName === p.name ? 'on' : '',
+                  onClick: () => {
+                    setDepartmentName(p.name)
+                    setEditProjectQuery('')
+                  },
+                }, deptChoiceLabel(p)))),
+              !departmentHits.list.length
+                ? e('p', { className: 'hint', style: { marginTop: 6 } }, departmentHits.q ? '没有匹配的部门。' : '还没有部门。到设置 → 称呼 → 部门，点同步部门。')
+                : (departmentHits.more
+                  ? e('p', { className: 'hint', style: { marginTop: 6 } }, '还有 ' + departmentHits.more + ' 个，再写细一点。')
+                  : e('p', { className: 'hint', style: { marginTop: 6 } }, '主部门和常用部门排在前面。')))
           : null)
     : e('div', { className: 'tags' },
         e('span', { className: 'tag', style: { cursor: 'default' } }, typeLabel(meetType)),
@@ -597,13 +682,21 @@ export function MeetingDetail(props) {
           : (meetType === '项目'
             ? e('span', { className: 'tag', key: 'proj-miss', style: { cursor: 'default' } }, '未标明项目')
             : null),
+        (meetType === '部门' && d.departmentName)
+          ? e('button', {
+              type: 'button', className: 'tag' + (meetTag === d.departmentName ? ' active' : ''), key: 'dept',
+              onClick: () => onTag && onTag(d.departmentName),
+            }, d.departmentName + (d.departmentId ? ' · ' + d.departmentId : ''))
+          : (meetType === '部门'
+            ? e('span', { className: 'tag', key: 'dept-miss', style: { cursor: 'default' } }, '未标明部门')
+            : null),
         (d.scopeSource !== 'user')
           ? e('button', {
               type: 'button', className: 'quiet', key: 'cls', disabled: classifyBusy,
               onClick: doClassify,
             }, classifyBusy ? '填写中' : (meetType ? '按规则重算' : '按规则填写'))
           : null,
-        (d.tags || []).filter((t) => t !== d.projectName).map((t) => e('button', {
+        (d.tags || []).filter((t) => t !== d.projectName && t !== d.departmentName).map((t) => e('button', {
           type: 'button', className: 'tag' + (meetTag === t ? ' active' : ''), key: t,
           onClick: () => onTag && onTag(t),
         }, t)))
@@ -771,10 +864,13 @@ export function MeetingDetail(props) {
     confirmRetract ? e(ConfirmSheet, {
       title: '撤回公司知识库',
       lede: (() => {
+        if (pubRemote && pubRemote.gateway === false) {
+          return '本机曾标记已上传。以前直连 RAGFlow 的那篇不会自动删；这次只取消本机标记。记录、总结和待办都还在。'
+        }
         const who = pubRemote && pubRemote.uploadedBy
         const other = who && pubOperator && who !== pubOperator
         if (other) return '这篇是' + who + '上传的。撤回会从「' + (meetType || '对应') + '」知识库删掉现在这一份。本机记录、总结和待办都还在。'
-        return '会从「' + (meetType || '对应') + '」知识库删掉这场会那一篇。本机记录、总结和待办都还在。'
+        return '会从「' + (meetType || '对应') + '」知识库撤回这场会。本机记录、总结和待办都还在。'
       })(),
       confirmLabel: '撤回',
       danger: true,
@@ -783,10 +879,14 @@ export function MeetingDetail(props) {
       onClose: () => { if (!pubBusy) setConfirmRetract(false) },
     }) : null,
     confirmUploadGate ? e(SheetFrame, {
-      title: pickType === '项目' && (d.type || d.scope) === '项目' ? '标明项目后上传' : '选类型后上传',
-      lede: (d.type || d.scope)
-        ? '项目会议进同一个知识库。先选这场会是哪个项目，再上传。'
-        : '先选这场会的类型，再上传到对应知识库。个人会议不能上传。',
+      title: (d.type || d.scope) === '部门' || pickType === '部门'
+        ? '标明部门后上传'
+        : (pickType === '项目' && (d.type || d.scope) === '项目' ? '标明项目后上传' : '选类型后上传'),
+      lede: (d.type || d.scope) === '部门'
+        ? '部门会议进部门管理知识库。必须选带编号的部门，再上传。'
+        : ((d.type || d.scope)
+          ? '项目会议进同一个知识库。必须选带编号的项目，再上传。'
+          : '先选这场会的类型，再上传到对应知识库。个人会议不能上传。项目和部门都必须有编号。'),
       onClose: closeUploadGate,
     },
       (d.type || d.scope)
@@ -798,10 +898,9 @@ export function MeetingDetail(props) {
                 type: 'button', key: 'ut-' + s, className: pickType === s ? 'on' : '', disabled: pickBusy,
                 onClick: () => {
                   setPickType(s)
-                  if (s !== '项目') {
-                    setPickName('')
-                    setAddingPick(false)
-                  }
+                  setPickName('')
+                  setPickQuery('')
+                  setAddingPick(false)
                 },
               }, s)))),
       pickType === '项目'
@@ -817,40 +916,57 @@ export function MeetingDetail(props) {
               (() => {
                 const q = String(pickQuery || '').trim().toLowerCase()
                 const rows = unionProjects(d.projects || [], remoteProjects).filter((p) => {
+                  if (!String(p.code || '').trim()) return false
                   if (!q) return true
                   return String(p.name || '').toLowerCase().includes(q) || String(p.code || '').toLowerCase().includes(q)
                 })
-                if (pickName && !rows.some((p) => p.name === pickName) && !q) {
-                  rows.unshift({ name: pickName, code: '' })
-                }
-                const pills = rows.map((p) => e('button', {
+                return rows.map((p) => e('button', {
                   type: 'button',
                   key: 'pick-' + p.name,
                   className: pickName === p.name ? 'on' : '',
                   disabled: pickBusy,
                   onClick: () => { setPickName(p.name); setAddingPick(false); rememberProject(p) },
                 }, p.name + (p.code ? ' · ' + p.code : '')))
-                pills.push(addingPick
-                  ? e(InlineComposer, {
-                      key: 'pick-in', compact: true, placeholder: '项目名', submitLabel: '确定',
-                      onSubmit: (name) => {
-                        const n = String(name || '').trim()
-                        if (n) setPickName(n)
-                        setAddingPick(false)
-                      },
-                      onCancel: () => setAddingPick(false),
-                    })
-                  : e('button', {
-                      type: 'button', className: 'quiet', key: 'pick-add', disabled: pickBusy,
-                      onClick: () => setAddingPick(true),
-                    }, '+ 其他'))
-                return pills
-              })()))
+              })()),
+            e('p', { className: 'hint', style: { marginTop: 6 } }, '只列出带编号的项目。'))
+        : null,
+      pickType === '部门'
+        ? e('div', { className: 'field', key: 'up-dept' },
+            e('span', null, '部门'),
+            e('input', {
+              type: 'text',
+              placeholder: '过滤名称或编号',
+              value: pickQuery,
+              onChange: (ev) => setPickQuery(ev.target.value),
+            }),
+            e('div', { className: 'cat-pills' },
+              (() => {
+                const q = String(pickQuery || '').trim().toLowerCase()
+                const rows = (d.departments || []).filter((p) => {
+                  if (!String(p.code || '').trim()) return false
+                  if (!q) return true
+                  return String(p.name || '').toLowerCase().includes(q) || String(p.code || '').toLowerCase().includes(q)
+                })
+                return rows.map((p) => e('button', {
+                  type: 'button',
+                  key: 'pick-dept-' + p.code,
+                  className: pickName === p.name ? 'on' : '',
+                  disabled: pickBusy,
+                  onClick: () => setPickName(p.name),
+                }, deptChoiceLabel(p)))
+              })()),
+            e('p', { className: 'hint', style: { marginTop: 6 } }, (d.departments || []).some((p) => String(p.code || '').trim()) ? '主部门和常用部门排在前面。' : '还没有部门。先到设置 → 称呼 → 部门，点同步部门。'))
         : null,
       e('div', { className: 'sheet-actions' },
         e('button', {
           className: 'primary',
-          disabled: pickBusy || !pickType || (pickType === '项目' && !String(pickName || '').trim()),
+          disabled: pickBusy || !pickType || ((pickType === '项目' || pickType === '部门') && !(() => {
+            const name = String(pickName || '').trim()
+            if (!name) return false
+            const rows = pickType === '部门' ? (d.departments || []) : unionProjects(d.projects || [], remoteProjects)
+            const hit = rows.find((p) => p.name === name)
+            return !!(hit && String(hit.code || '').trim())
+          })()),
           onClick: submitUploadGate,
         }, pickBusy ? '上传中…' : (uploadBtnLabel(pickType) || '上传')),
         e('button', { className: 'quiet', disabled: pickBusy, onClick: closeUploadGate }, '取消')))
@@ -861,8 +977,9 @@ export function MeetingDetail(props) {
         const who = pubRemote && pubRemote.uploadedBy
         const when = pubRemote && pubRemote.uploadedAt ? fmtDateTime(Date.parse(pubRemote.uploadedAt)) : ''
         const whoWhen = [who, when].filter(Boolean).join(' · ')
-        if (whoWhen) return '知识库里已有这篇（' + whoWhen + '）。覆盖会换成你这份总结和待办。'
-        return '知识库里已有这篇。覆盖会换成你这份总结和待办。'
+        if (pubRemote && pubRemote.gateway === false) return '本机已标记上传过（旧 RAGFlow 记录）。覆盖会重新归档到知识库网关。'
+        if (whoWhen) return '本机已标记上传过（' + whoWhen + '）。覆盖会先撤回旧稿，再提交你这份总结和待办。'
+        return '本机已标记上传过。覆盖会先撤回旧稿，再提交你这份总结和待办。'
       })(),
       confirmLabel: '覆盖',
       danger: true,

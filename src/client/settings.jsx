@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { api, fallbackCopy } from './api.js'
-import { KB_DS, LLM_PRESETS, MEETING_TYPES, fmtDateTime, lastSyncLabel, syncProgressLabel } from './format.js'
+import { LLM_PRESETS, MEETING_TYPES, fmtDateTime, lastSyncLabel, syncProgressLabel } from './format.js'
 import { ConfirmSheet } from './ui.jsx'
 
 const GLOSSARY_TABS = [
   { id: 'people', label: '人', add: '+ 人', namePh: '正式姓名', aliasPh: '勇哥、林哥' },
   { id: 'projects', label: '项目', add: '+ 项目', namePh: '正式项目名', aliasPh: '简称、口述', codePh: '编号，可空' },
+  { id: 'departments', label: '部门', add: '+ 部门', namePh: '部门名称', aliasPh: '简称、口述', codePh: '部门编号' },
   { id: 'terms', label: '用语', add: '+ 用语', namePh: '标准写法', aliasPh: '听错、近音' },
 ]
 
@@ -38,6 +39,25 @@ function foldText(s) {
   return String(s || '').trim().toLowerCase()
 }
 
+function deptRank(p) {
+  if (p && p.primary) return [0, 0]
+  if (p && p.pin != null) return [1, p.pin]
+  if (p && p.member) return [2, 0]
+  return [3, 0]
+}
+
+function reindexPins(rows) {
+  const pins = rows
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => r.code && r.pin != null && !r.primary)
+    .sort((a, b) => a.r.pin - b.r.pin || a.i - b.i)
+  const pinAt = new Map(pins.map(({ i }, n) => [i, n]))
+  return rows.map((r, i) => {
+    if (pinAt.has(i)) return { ...r, pin: pinAt.get(i) }
+    return r.pin == null ? r : { ...r, pin: null }
+  })
+}
+
 function rowMatchesQuery(row, q) {
   if (!q) return true
   const hay = [row && row.name, row && row.code, row && row.aliases].map(foldText).join(' ')
@@ -54,19 +74,19 @@ export function SettingsPage(props) {
   const [err, setErr] = useState(null)
   const [people, setPeople] = useState([])
   const [projects, setProjects] = useState([])
+  const [departments, setDepartments] = useState([])
   const [terms, setTerms] = useState([])
   const [glossaryKind, setGlossaryKind] = useState(() => {
     try { return sessionStorage.getItem('ma-glossary-kind') || 'people' } catch { return 'people' }
   })
   const [llm, setLlm] = useState({ preset: 'deepseek', baseUrl: '', model: '', apiKey: '' })
-  const [kb, setKb] = useState({ url: '', apiKey: '', datasets: { mgmt: '', ops: '', project: '', dept: '' } })
   const [testing, setTesting] = useState('')
   const [testMsg, setTestMsg] = useState('')
   const [logs, setLogs] = useState([])
   const [mcpBusy, setMcpBusy] = useState(false)
   const [writebackBusy, setWritebackBusy] = useState(false)
   const [classifyBusy, setClassifyBusy] = useState(false)
-  const [classify, setClassify] = useState({ projectFromGlossary: true, rules: [] })
+  const [classify, setClassify] = useState({ projectFromGlossary: true, deptFromGlossary: true, rules: [] })
   const [confirmClassify, setConfirmClassify] = useState(false)
   const [confirmRotate, setConfirmRotate] = useState(false)
   const [confirmFull, setConfirmFull] = useState(false)
@@ -110,21 +130,25 @@ export function SettingsPage(props) {
   const apply = (r) => {
     setSt(r)
     setPeople(r.people || [])
-    setProjects((r.projects || []).map((p) => ({ name: p.name || '', aliases: p.aliases || '', code: p.code || '' })))
+    setProjects((r.projects || []).map((p) => ({ name: p.name || '', aliases: p.aliases || '', code: p.code || '', synced: !!p.synced })))
+    setDepartments((r.departments || []).map((p) => ({
+      name: p.name || '',
+      aliases: p.aliases || '',
+      code: p.code || '',
+      synced: !!p.synced,
+      primary: !!p.primary,
+      pin: Number.isInteger(p.pin) ? p.pin : null,
+      member: !!p.member,
+    })))
     setTerms(r.terms || [])
     const L = r.llm || {}
     setLlm({ preset: L.preset || 'deepseek', baseUrl: L.baseUrl || '', model: L.model || '', apiKey: '' })
-    const K = r.kb || {}
-    setKb({
-      url: K.url || '',
-      apiKey: '',
-      datasets: Object.assign({ mgmt: '', ops: '', project: '', dept: '' }, K.datasets || {}),
-    })
     const H = r.ht || {}
     setHt({ url: H.url || '', apiKey: '' })
     const C = r.classify || {}
     setClassify({
       projectFromGlossary: C.projectFromGlossary !== false,
+      deptFromGlossary: C.deptFromGlossary !== false,
       rules: Array.isArray(C.rules) ? C.rules : [],
     })
   }
@@ -158,6 +182,7 @@ export function SettingsPage(props) {
   const setKindRows = (kind, next) => {
     if (kind === 'people') setPeople(next)
     else if (kind === 'projects') setProjects(next)
+    else if (kind === 'departments') setDepartments(next)
     else setTerms(next)
   }
   const persistKind = (kind, next) => {
@@ -208,25 +233,105 @@ export function SettingsPage(props) {
     if (llm.apiKey.trim()) body.apiKey = llm.apiKey.trim()
     api('/api/settings', { llm: body }).then((r) => { apply(r); toast('已保存') }).catch((er) => toast(String(er && er.message || er)))
   }
-  const saveKb = () => {
-    const body = { url: kb.url, datasets: kb.datasets }
-    if (kb.apiKey.trim()) body.apiKey = kb.apiKey.trim()
-    api('/api/settings', { kb: body }).then((r) => { apply(r); toast('已保存') }).catch((er) => toast(String(er && er.message || er)))
-  }
   const saveHt = () => {
     const body = { url: ht.url }
     if (ht.apiKey.trim()) body.apiKey = ht.apiKey.trim()
-    api('/api/settings', { ht: body }).then((r) => { apply(r); toast('已保存') }).catch((er) => toast(String(er && er.message || er)))
+    api('/api/settings', { ht: body }).then((r) => {
+      apply(r)
+      toast('已保存')
+      try { window.dispatchEvent(new Event('ma-identity')) } catch { /* ignore */ }
+    }).catch((er) => toast(String(er && er.message || er)))
   }
   const testHt = () => {
     setTesting('ht'); setHtMsg('')
-    api('/api/settings/ht-test', {}).then((r) => {
+    Promise.all([
+      api('/api/settings/ht-test', {}),
+      api('/api/identity').catch((er) => ({ error: String(er && er.message || er) })),
+    ]).then(([r, id]) => {
       if (!r.ok) { setHtMsg(r.error || '不通'); return }
       const bits = []
-      if (r.caller) bits.push(r.caller)
+      if (id && id.name) bits.push(id.name)
+      else if (r.caller) bits.push(r.caller)
       bits.push('见到 ' + (r.count || 0) + ' 个项目')
+      if (id && id.error) bits.push(id.error)
       setHtMsg('可用 · ' + bits.join(' · '))
+      if (id && id.name) {
+        try { window.dispatchEvent(new Event('ma-identity')) } catch { /* ignore */ }
+      }
     }).catch((er) => setHtMsg(String(er && er.message || er))).finally(() => setTesting(''))
+  }
+  const saveDeptOrder = (next) => {
+    setDepartments(next)
+    const primary = next.find((r) => r.primary && r.code)
+    const pinnedIds = next
+      .filter((r) => r.code && r.pin != null && !r.primary)
+      .sort((a, b) => a.pin - b.pin)
+      .map((r) => r.code)
+    api('/api/settings', {
+      departmentPrefs: {
+        primaryId: primary ? primary.code : '',
+        primaryTouched: true,
+        pinnedIds,
+      },
+    }).then(apply).catch((er) => toast(String(er && er.message || er)))
+  }
+  const togglePrimary = (i) => {
+    const row = departments[i]
+    if (!row || !String(row.code || '').trim()) { toast('先填写部门编号'); return }
+    const on = !row.primary
+    const next = departments.map((r, j) => {
+      if (j === i) return { ...r, primary: on, pin: on ? null : r.pin }
+      if (on && r.primary) return { ...r, primary: false }
+      return r
+    })
+    saveDeptOrder(reindexPins(next))
+  }
+  const togglePin = (i) => {
+    const row = departments[i]
+    if (!row || !String(row.code || '').trim() || row.primary) return
+    const next = departments.slice()
+    if (row.pin != null) next[i] = { ...row, pin: null }
+    else {
+      const max = departments.reduce((m, r) => (r.pin != null ? Math.max(m, r.pin) : m), -1)
+      next[i] = { ...row, pin: max + 1 }
+    }
+    saveDeptOrder(reindexPins(next))
+  }
+  const movePin = (i, dir) => {
+    const pins = departments
+      .map((r, idx) => ({ r, idx }))
+      .filter(({ r }) => r.pin != null && !r.primary)
+      .sort((a, b) => a.r.pin - b.r.pin)
+    const pos = pins.findIndex(({ idx }) => idx === i)
+    const swap = pos + dir
+    if (pos < 0 || swap < 0 || swap >= pins.length) return
+    const next = departments.slice()
+    const a = pins[pos]
+    const b = pins[swap]
+    next[a.idx] = { ...a.r, pin: b.r.pin }
+    next[b.idx] = { ...b.r, pin: a.r.pin }
+    saveDeptOrder(reindexPins(next))
+  }
+  const syncDepartments = () => {
+    setTesting('dept-sync'); setHtMsg('')
+    api('/api/settings/departments-sync', {}).then((r) => {
+      apply(r)
+      const im = r.import || {}
+      const who = r.name ? (r.name + ' · ') : ''
+      const parts = []
+      if (im.matched != null) parts.push('部门 ' + im.matched)
+      if (im.added) parts.push('新增 ' + im.added)
+      if (im.updated) parts.push('更新 ' + im.updated)
+      if (im.skipped) parts.push('未变 ' + im.skipped)
+      const text = who + (parts.length ? ('已同步 · ' + parts.join('，')) : '没有新部门')
+      setHtMsg(text)
+      toast(text)
+      try { window.dispatchEvent(new Event('ma-identity')) } catch { /* ignore */ }
+    }).catch((er) => {
+      const msg = String(er && er.message || er)
+      setHtMsg(msg)
+      toast(msg)
+    }).finally(() => setTesting(''))
   }
   const syncHtProjects = () => {
     setTesting('ht-sync'); setHtMsg('')
@@ -298,16 +403,30 @@ export function SettingsPage(props) {
   const llmHint = st.llm && st.llm.envLocked
     ? '当前由环境变量覆盖设置页。'
     : (st.llm && st.llm.source === 'dsh' ? '密钥仍来自本机 DSH 凭据，保存后改用设置。' : '')
-  const lists = { people, projects, terms }
+  const lists = { people, projects, departments, terms }
   const kindMeta = GLOSSARY_TABS.find((x) => x.id === glossaryKind) || GLOSSARY_TABS[0]
+  const hasCode = kindMeta.id === 'projects' || kindMeta.id === 'departments'
   const kindRows = lists[kindMeta.id] || []
   const shared = sharedAliasSet(kindRows)
   const filterQ = foldText(glossaryQuery)
   const visibleRows = kindRows.map((p, i) => ({ p, i })).filter(({ p }) => rowMatchesQuery(p, filterQ))
+  const shownRows = kindMeta.id === 'departments'
+    ? visibleRows.slice().sort((a, b) => {
+      const ra = deptRank(a.p)
+      const rb = deptRank(b.p)
+      if (ra[0] !== rb[0]) return ra[0] - rb[0]
+      if (ra[1] !== rb[1]) return ra[1] - rb[1]
+      return String(a.p.name || '').localeCompare(String(b.p.name || ''), 'zh')
+    })
+    : visibleRows
+  const pinnedSpots = departments
+    .map((r, idx) => ({ r, idx }))
+    .filter(({ r }) => r.pin != null && !r.primary)
+    .sort((a, b) => a.r.pin - b.r.pin)
   const peoplePane = (
-    <div className={'page-inner' + (kindMeta.id === 'projects' ? ' wide' : '')}>
+    <div className={'page-inner' + (hasCode ? ' wide' : '')}>
       <h1>称呼</h1>
-      <p className="lede">{glossaryKind === 'projects' ? '正式名用于上传和检索。可从外部系统同步你可见的项目，或导入项目清单 CSV。' : '总结时把口语、简称和听错落到正式写法。'}</p>
+      <p className="lede">{glossaryKind === 'projects' ? '正式名用于上传和检索。可从外部系统同步你可见的项目，或导入项目清单 CSV。同步来的名称和编号不能改，别名可以改。' : (glossaryKind === 'departments' ? '部门名称和编号用于归类。主部门排第一，常用部门按你的顺序排在后面。同步来的名称和编号不能改，别名可以改。' : '总结时把口语、简称和听错落到正式写法。')}</p>
       <div className="filters">
         {GLOSSARY_TABS.map((x) => (
           <button
@@ -326,39 +445,48 @@ export function SettingsPage(props) {
             <div className="glossary-toolbar">
               <input
                 type="text"
-                placeholder={kindMeta.id === 'projects' ? '按名称、编号、别名筛选' : '按名称、别名筛选'}
+                placeholder={hasCode ? '按名称、编号、别名筛选' : '按名称、别名筛选'}
                 value={glossaryQuery}
                 onChange={(ev) => setGlossaryQuery(ev.target.value)}
               />
               <span className="n">{filterQ && visibleRows.length !== kindRows.length ? ('显示 ' + visibleRows.length + ' / ' + kindRows.length) : ('共 ' + kindRows.length + ' 个')}</span>
             </div>
             <div className="glossary-list">
-              <div className={'person person-head' + (kindMeta.id === 'projects' ? ' has-code' : '')}>
+              <div className={'person person-head' + (hasCode ? ' has-code' : '') + (kindMeta.id === 'departments' ? ' has-dept' : '')}>
                 <span>名称</span>
-                {kindMeta.id === 'projects' ? <span>编号</span> : null}
+                {hasCode ? <span>编号</span> : null}
                 <span>别名</span>
+                {kindMeta.id === 'departments' ? <span>排序</span> : null}
                 <span />
               </div>
-              {visibleRows.length
-                ? visibleRows.map(({ p, i }) => {
+              {shownRows.length
+                ? shownRows.map(({ p, i }) => {
                   const dup = splitAliases(p.aliases).some((a) => shared.has(a.toLowerCase()))
+                  const pinPos = pinnedSpots.findIndex(({ idx }) => idx === i)
+                  const locked = !!p.synced && (kindMeta.id === 'projects' || kindMeta.id === 'departments')
                   return (
-                    <div className={'person' + (kindMeta.id === 'projects' ? ' has-code' : '')} key={kindMeta.id + '-' + i}>
+                    <div className={'person' + (hasCode ? ' has-code' : '') + (kindMeta.id === 'departments' ? ' has-dept' : '')} key={kindMeta.id + '-' + i}>
                       <input
                         type="text"
                         placeholder={kindMeta.namePh}
                         value={p.name}
+                        readOnly={locked}
+                        title={locked ? '来自外部系统，不能改' : undefined}
                         onChange={(ev) => {
+                          if (locked) return
                           const n = kindRows.slice(); n[i] = { ...n[i], name: ev.target.value }; setKindRows(kindMeta.id, n)
                         }}
                       />
-                      {kindMeta.id === 'projects'
+                      {hasCode
                         ? (
                           <input
                             type="text"
                             placeholder={kindMeta.codePh}
                             value={p.code || ''}
+                            readOnly={locked}
+                            title={locked ? '来自外部系统，不能改' : undefined}
                             onChange={(ev) => {
+                              if (locked) return
                               const n = kindRows.slice(); n[i] = { ...n[i], code: ev.target.value }; setKindRows(kindMeta.id, n)
                             }}
                           />
@@ -375,7 +503,19 @@ export function SettingsPage(props) {
                         />
                         {dup ? <span className="dup">不唯一</span> : null}
                       </div>
-                      <button className="quiet" onClick={() => persistKind(kindMeta.id, kindRows.filter((_, j) => j !== i))}>删除</button>
+                      {kindMeta.id === 'departments'
+                        ? (
+                          <div className="dept-rank">
+                            <button type="button" className={p.primary ? 'on' : ''} disabled={!p.code} onClick={() => togglePrimary(i)}>主</button>
+                            <button type="button" className={p.pin != null ? 'on' : ''} disabled={!p.code || p.primary} onClick={() => togglePin(i)}>常用</button>
+                            <button type="button" disabled={pinPos <= 0} onClick={() => movePin(i, -1)}>上移</button>
+                            <button type="button" disabled={pinPos < 0 || pinPos === pinnedSpots.length - 1} onClick={() => movePin(i, 1)}>下移</button>
+                          </div>
+                        )
+                        : null}
+                      {locked
+                        ? null
+                        : <button className="quiet" onClick={() => persistKind(kindMeta.id, kindRows.filter((_, j) => j !== i))}>删除</button>}
                     </div>
                   )
                 })
@@ -410,6 +550,16 @@ export function SettingsPage(props) {
             />
             <button className="quiet" disabled={importBusy} onClick={() => projectFileRef.current && projectFileRef.current.click()}>{importBusy ? '导入中…' : '导入清单'}</button>
             <a className="quiet" href="/项目清单模板.csv" download="项目清单模板.csv">下载模板</a>
+          </div>
+        )
+        : null}
+      {kindMeta.id === 'departments'
+        ? (
+          <div className="block" style={{ marginTop: 28 }}>
+            <h3>从外部系统同步</h3>
+            <p className="lede">读取当前令牌可写入的业务部门。已有部门按编号或名称合并，别名、主部门和常用顺序都保留。还没设过主部门时，用身份接口里的主部门。令牌需勾选「读取本人身份与业务部门」。</p>
+            <button className="quiet" disabled={testing === 'dept-sync'} onClick={syncDepartments}>{testing === 'dept-sync' ? '同步中…' : '同步部门'}</button>
+            {htMsg && tab === 'people' && glossaryKind === 'departments' ? <p className="status">{htMsg}</p> : null}
           </div>
         )
         : null}
@@ -450,33 +600,16 @@ export function SettingsPage(props) {
   const kbPane = (
     <div className="page-inner">
       <h1>上传</h1>
-      <p className="lede">详情里点上传时写入这里。一台 RAGFlow、四个库。项目会议进同一个库，用项目名（及可选编号）区分，不按项目拆库。</p>
-      <div className="field"><span>地址</span><input type="text" placeholder="RAGFlow 地址" value={kb.url} onChange={(ev) => setKb({ ...kb, url: ev.target.value })} /></div>
-      <div className="field">
-        <span>密钥</span>
-        <input
-          type="password"
-          placeholder={st.kb && st.kb.keySet ? '已保存' : '公司提供'}
-          value={kb.apiKey}
-          onChange={(ev) => setKb({ ...kb, apiKey: ev.target.value })}
-        />
-      </div>
-      {KB_DS.map((d) => (
-        <div className="field" key={d.key}>
-          <span>{d.label + ' · dataset id'}</span>
-          <input
-            type="text"
-            placeholder="RAGFlow 数据集 ID"
-            value={kb.datasets[d.key] || ''}
-            onChange={(ev) => setKb({ ...kb, datasets: { ...kb.datasets, [d.key]: ev.target.value } })}
-          />
-        </div>
-      ))}
-      <button className="primary" onClick={saveKb}>保存</button>
+      <p className="lede">详情里点上传，会用「外部系统」里的公司数智系统令牌，把总结交给瀚小智知识库网关。不再直连 RAGFlow，也不填 Dataset ID。</p>
+      <p className="hint">公司管理 → company-management；公司运营 → company-operations；项目 → project（必须有项目编号）；部门 → department-management（必须有部门编号）。个人会不上传。</p>
+      <p className="hint">点上传即确认归档。测一下会区分可归档和仅可读；没有归档权限的库传不上去。</p>
+      {st && st.kb && st.kb.configured
+        ? <p className="hint">已接上外部系统令牌。</p>
+        : <p className="hint">先到「外部系统」填地址和令牌。</p>}
       <button className="quiet" disabled={testing === 'kb'} onClick={() => {
         setTesting('kb'); setTestMsg('')
         api('/api/settings/kb-test', {}).then((r) => {
-          setTestMsg(r.ok ? ('可用 · 见到 ' + r.count + ' 个库') : (r.error || '不通'))
+          setTestMsg(r.ok ? ('可用 · ' + (r.detail || r.knowledgeBaseCode || '知识库网关')) : (r.error || '不通'))
         }).catch((er) => setTestMsg(String(er && er.message || er))).finally(() => setTesting(''))
       }}>{testing === 'kb' ? '在测…' : '测一下'}</button>
       {testMsg && tab === 'kb' ? <p className="status">{testMsg}</p> : null}
@@ -485,10 +618,10 @@ export function SettingsPage(props) {
   const extPane = (
     <div className="page-inner">
       <h1>外部系统</h1>
-      <p className="lede">接公司数智系统，把你有权看的项目同步进称呼表。地址和令牌只存在本机。</p>
+      <p className="lede">接公司数智系统：同步你有权看的项目和可写入的部门，并把会议归档到知识库网关。地址和令牌只存在本机。配好令牌后，顶栏右侧会显示这个令牌对应的姓名。</p>
       <div className="block">
         <h3>公司数智系统</h3>
-        <p className="lede">令牌在数智系统「个人中心 · 第三方应用接入」创建。同步会拉全部有效项目，本地别名保留。</p>
+        <p className="lede">令牌在数智系统「个人中心 · 第三方应用接入」创建。同步项目会拉全部有效项目。同步部门需要令牌勾选「读取本人身份与业务部门」。本地别名都保留。</p>
         {st.ht && st.ht.envLocked ? <p className="hint">当前由环境变量覆盖设置页。</p> : null}
         <div className="field"><span>地址</span><input type="text" placeholder="数智系统地址，问同事要" value={ht.url} onChange={(ev) => setHt({ ...ht, url: ev.target.value })} /></div>
         <div className="field">
@@ -503,6 +636,7 @@ export function SettingsPage(props) {
         <button className="primary" onClick={saveHt}>保存</button>
         <button className="quiet" disabled={testing === 'ht'} onClick={testHt}>{testing === 'ht' ? '在测…' : '测一下'}</button>
         <button className="quiet" disabled={testing === 'ht-sync'} onClick={syncHtProjects}>{testing === 'ht-sync' ? '同步中…' : '同步项目'}</button>
+        <button className="quiet" disabled={testing === 'dept-sync'} onClick={syncDepartments}>{testing === 'dept-sync' ? '同步中…' : '同步部门'}</button>
         {htMsg ? <p className="status">{htMsg}</p> : null}
       </div>
     </div>
@@ -510,14 +644,18 @@ export function SettingsPage(props) {
   const classifyPane = (
     <div className="page-inner">
       <h1>类型规则</h1>
-      <p className="lede">新听记入库时，按从上到下第一条命中的规则填写类型和标签。项目会会同时填项目名。手改过的类型不覆盖。库里已有的要点「套用到未定场次」。</p>
+      <p className="lede">新听记入库时，按从上到下第一条命中的规则填写类型和标签。项目会会同时填项目名和编号，部门会会同时填部门名和编号。手改过的类型不覆盖。库里已有的要点「套用到未定场次」。</p>
       <div className="filters">
         <button
           className={classify.projectFromGlossary ? 'on' : ''}
           onClick={() => setClassify({ ...classify, projectFromGlossary: !classify.projectFromGlossary })}
         >词表项目</button>
+        <button
+          className={classify.deptFromGlossary ? 'on' : ''}
+          onClick={() => setClassify({ ...classify, deptFromGlossary: !classify.deptFromGlossary })}
+        >词表部门</button>
       </div>
-      <p className="hint">{classify.projectFromGlossary ? '标题或记录命中称呼表里的项目名/别名时，标为「项目」并打上该项目名。规则先于这一条。' : '不自动用词表项目名识别。'}</p>
+      <p className="hint">{(classify.projectFromGlossary ? '标题或记录命中称呼表里的项目名时，标为「项目」并写上编号。' : '不自动用词表项目名识别。') + (classify.deptFromGlossary ? '没有命中项目时，再按部门名标为「部门」并写上部门编号。' : '不自动用词表部门名识别。') + '规则先于词表。'}</p>
       {(classify.rules || []).map((rule, i) => (
         <div className="rule" key={rule.id || i}>
           <div className="rule-head">
@@ -609,7 +747,7 @@ export function SettingsPage(props) {
   }
   const syncPane = (
     <div className="page-inner">
-      <h1>听记</h1>
+      <h1>来源</h1>
       <p className="lede">钉钉、飞书、腾讯谁登录了就拉谁。写回只作用于支持改标题/纪要的来源。</p>
       {sourceCards.map((card) => {
         const s = sourceMap[card.id] || {}
@@ -651,8 +789,8 @@ export function SettingsPage(props) {
       {confirmFull
         ? (
           <ConfirmSheet
-            title="全量同步听记"
-            lede="从已登录的钉钉、飞书、腾讯把本机还没有的听记都拉下来。已在本机的不覆盖你改过的记录和逐字稿；本机删过的不会再回来。未登录的来源会跳过。"
+            title="全量同步"
+            lede="从已登录的钉钉、飞书、腾讯把本机还没有的会议都拉下来。已在本机的不覆盖你改过的记录和逐字稿；本机删过的不会再回来。未登录的来源会跳过。"
             confirmLabel="开始全量"
             busy={pulling}
             onConfirm={doFullSync}
@@ -739,18 +877,18 @@ export function SettingsPage(props) {
     </div>
   )
   const panes = { people: peoplePane, classify: classifyPane, llm: llmPane, kb: kbPane, ext: extPane, mcp: mcpPane, sync: syncPane, ver: verPane, logs: logsPane }
-  const glossaryCount = people.length + projects.length + terms.length
+  const glossaryCount = people.length + projects.length + departments.length + terms.length
   const llmStatus = (st.llm && st.llm.model) || (st.llm && st.llm.keySet ? '已配' : '未配置')
-  const kbStatus = (st.kb && st.kb.filled) ? (st.kb.filled + '/4') : '未填'
+  const kbStatus = (st.kb && st.kb.configured) ? '已接' : '未配'
   const htStatus = (st.ht && st.ht.keySet) ? '已配' : '未配'
   const mcpStatus = mcp.enabled ? '开' : '关'
-  const classifyStatus = String((classify.rules || []).length || (classify.projectFromGlossary ? '词表' : '未配'))
+  const classifyStatus = String((classify.rules || []).length || ((classify.projectFromGlossary || classify.deptFromGlossary) ? '词表' : '未配'))
   const syncStatusLabel = pulling ? '同步中' : (lastSyncLabel(syncSt) ? '已同步' : '未同步')
   return (
     <div className="settings">
       <aside className="cats">
         <h2>设置</h2>
-        {[['people', '称呼', String(glossaryCount)], ['classify', '类型', classifyStatus], ['llm', '模型', llmStatus], ['kb', '上传', kbStatus], ['ext', '外部系统', htStatus], ['mcp', 'MCP', mcpStatus], ['sync', '听记', syncStatusLabel], ['ver', '版本', (appUp && appUp.available) ? '有更新' : ((appUp && appUp.current) || '—')], ['logs', '日志', String(logs.length || '')]].map(([id, label, n]) => (
+        {[['people', '称呼', String(glossaryCount)], ['classify', '类型', classifyStatus], ['llm', '模型', llmStatus], ['kb', '上传', kbStatus], ['ext', '外部系统', htStatus], ['mcp', 'MCP', mcpStatus], ['sync', '来源', syncStatusLabel], ['ver', '版本', (appUp && appUp.available) ? '有更新' : ((appUp && appUp.current) || '—')], ['logs', '日志', String(logs.length || '')]].map(([id, label, n]) => (
           <div className={'cat' + (tab === id ? ' on' : '')} key={id} onClick={() => { setTab(id); setTestMsg(''); setHtMsg('') }}>
             {label + ' '}<span className="n">{n}</span>
           </div>

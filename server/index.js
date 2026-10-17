@@ -11,7 +11,9 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
 import { ask, summarizeTranscript, testLlm } from '../lib/ask.js'
-import { loadGlossary, glossaryForSettings, saveUserNamedList } from '../lib/glossary.js'
+import { loadGlossary, glossaryForSettings, saveDepartmentPrefs, saveUserNamedList } from '../lib/glossary.js'
+import { departmentChoices, departmentPatch } from '../lib/department.js'
+import { identityForBanner, syncDepartmentsFromIdentity } from '../lib/identity.js'
 import { projectPatch, projectChoices } from '../lib/project.js'
 import { importProjectsFromCsv } from '../lib/project-csv.js'
 import { searchProjectReferences, syncAllProjects, syncProjectsFromItems, syncProjectsFromQuery, testHtworkbuddy } from '../lib/htworkbuddy.js'
@@ -26,7 +28,8 @@ import {
   insertAction, updateActionFields, deleteAction, getAction, getMeeting,
   getTodoCats, setTodoCats, saveDeepSummary, saveRecord, saveTranscript, deleteMeetingLocal,
 } from '../lib/db.js'
-import { setMeetingVisibility, peekCompanyMeeting, testRagflow, repairPublishedMetadata } from '../lib/publish.js'
+import { setMeetingVisibility, peekCompanyMeeting } from '../lib/publish.js'
+import { testKnowledgeGateway } from '../lib/knowledge.js'
 import { importMeeting } from '../lib/import-meeting.js'
 import { persistSyncResult, isSyncing, syncProgress, enqueueSync } from '../lib/sync-run.js'
 import { syncStatus } from '../lib/sync-status.js'
@@ -42,7 +45,7 @@ import { getMcpState, setMcpEnabled, rotateMcpToken, mcpIsEnabled, bearerMatches
 import { handleMcpHttp } from '../lib/mcp-server.js'
 import {
   resolveLlmConfig, saveLlmConfig, llmPublicView,
-  resolveKbConfig, saveKbConfig, kbPublicView,
+  saveKbConfig, kbPublicView,
   resolveHtConfig, saveHtConfig, htPublicView,
   resolveWriteback, saveWriteback,
 } from '../lib/runtime-config.js'
@@ -130,6 +133,10 @@ app.get('/api/detail', async (req, res) => {
 
 app.get('/api/projects', async (_req, res) => {
   try { ok(res, { items: projectChoices(loadGlossary()) }) } catch (e) { fail(res, e) }
+})
+
+app.get('/api/departments', async (_req, res) => {
+  try { ok(res, { items: departmentChoices(loadGlossary()) }) } catch (e) { fail(res, e) }
 })
 
 app.get('/api/project', async (req, res) => {
@@ -291,7 +298,9 @@ app.patch('/api/meeting', async (req, res) => {
     const m = getMeeting(db, id)
     if (!m) { db.close(); return fail(res, new Error('未找到会议')) }
     const nextType = fields.scope !== undefined ? fields.scope : normalizeType(m.scope)
-    Object.assign(fields, projectPatch(req.body, nextType, loadGlossary()))
+    const glossary = loadGlossary()
+    Object.assign(fields, projectPatch(req.body, nextType, glossary))
+    Object.assign(fields, departmentPatch(req.body, nextType, glossary))
     if (Object.keys(fields).length === 0 && deepIn === undefined && !hasSummary && !hasTranscript) {
       db.close()
       return fail(res, new Error('没有可更新字段'))
@@ -553,8 +562,8 @@ function settingsPayload() {
   const g = glossaryForSettings()
   const db = open()
   const llm = llmPublicView(resolveLlmConfig(db))
-  const kb = kbPublicView(resolveKbConfig(db))
   const ht = htPublicView(resolveHtConfig(db))
+  const kb = kbPublicView(ht)
   const cats = getTodoCats(db)
   const writeback = resolveWriteback(db)
   const classify = classifyPublicView(loadClassifyConfig(db))
@@ -562,6 +571,7 @@ function settingsPayload() {
   return {
     people: g.people,
     projects: g.projects,
+    departments: g.departments,
     terms: g.terms,
     llm,
     kb,
@@ -582,6 +592,8 @@ app.post('/api/settings', async (req, res) => {
     const body = req.body || {}
     if (body.people !== undefined) saveUserNamedList('people', body.people)
     if (body.projects !== undefined) saveUserNamedList('projects', body.projects)
+    if (body.departments !== undefined) saveUserNamedList('departments', body.departments)
+    if (body.departmentPrefs) saveDepartmentPrefs(body.departmentPrefs)
     if (body.terms !== undefined) saveUserNamedList('terms', body.terms)
     const db = open()
     if (body.llm) saveLlmConfig(db, body.llm)
@@ -623,6 +635,22 @@ app.get('/api/ht/projects', async (req, res) => {
 
 app.post('/api/settings/ht-test', async (_req, res) => {
   try { ok(res, await testHtworkbuddy()) } catch (e) { ok(res, { ok: false, error: String((e && e.message) || e) }) }
+})
+
+app.get('/api/identity', async (_req, res) => {
+  try { ok(res, await identityForBanner()) } catch (e) { ok(res, { configured: false, name: '', error: String((e && e.message) || e) }) }
+})
+
+app.post('/api/settings/departments-sync', async (_req, res) => {
+  try {
+    const r = await syncDepartmentsFromIdentity()
+    if (r.error) return res.status(400).json({ error: r.error })
+    ok(res, {
+      ...settingsPayload(),
+      import: { added: r.added, updated: r.updated, skipped: r.skipped, total: r.total, matched: r.matched },
+      name: r.name || '',
+    })
+  } catch (e) { fail(res, e) }
 })
 
 app.post('/api/settings/projects-sync', async (req, res) => {
@@ -693,7 +721,7 @@ app.post('/api/settings/llm-test', async (_req, res) => {
 })
 
 app.post('/api/settings/kb-test', async (_req, res) => {
-  try { ok(res, await testRagflow()) } catch (e) { ok(res, { ok: false, error: String((e && e.message) || e) }) }
+  try { ok(res, await testKnowledgeGateway()) } catch (e) { ok(res, { ok: false, error: String((e && e.message) || e) }) }
 })
 
 // ---------- 启动 ----------
@@ -706,9 +734,6 @@ server.listen(PORT, HOST, () => {
   armAutoSync()
   armAppUpdate((r) => {
     pushLog('服务', r.message + (r.subject ? ' · ' + r.subject : '') + '。可在顶栏点更新')
-  })
-  repairPublishedMetadata().catch((e) => {
-    console.error('[publish] 补写知识库元数据失败:', e && e.message || e)
   })
 })
 server.on('error', (e) => {
