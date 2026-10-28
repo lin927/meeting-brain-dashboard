@@ -2,6 +2,7 @@ import React from 'react'
 import { api, fallbackCopy } from './api.js'
 import { MEETING_TYPES, PUBLISH_TYPES, companyMark, fmtBytes, fmtDateTime, typeLabel, uploadBtnLabel, ymd } from './format.js'
 import { ConfirmSheet, InlineComposer, Md, SheetFrame, CheckMark, SourceMark, TitleInput, TodoRowTitle, useDebounced } from './ui.jsx'
+import { MdEditor } from './md-editor.jsx'
 
 const e = React.createElement
 
@@ -770,7 +771,7 @@ export function MeetingDetail(props) {
     sub === 'record'
       ? e('div', { className: 'body-pane' },
           editingBody === 'record'
-            ? e('textarea', { className: 'body-edit', value: summary, onChange: (ev) => setSummary(ev.target.value) })
+            ? e(MdEditor, { value: summary, onChange: setSummary, onSave: saveBody })
             : (d.summary ? e(Md, { text: d.summary }) : e('p', { className: 'hint' }, '还没有记录。')),
           bodyHint ? e('p', { className: 'hint body-hint' }, bodyHint) : null)
       : null,
@@ -786,7 +787,7 @@ export function MeetingDetail(props) {
           deeping
             ? e('p', { className: 'hint' }, '生成中…')
             : (editingBody === 'deep'
-                ? e('textarea', { className: 'body-edit', value: deep, onChange: (ev) => setDeep(ev.target.value) })
+                ? e(MdEditor, { value: deep, onChange: setDeep, onSave: saveBody })
                 : (deep
                     ? e(Md, { text: deep })
                     : e('div', { className: 'deep-empty' },

@@ -142,6 +142,89 @@
       font-size: 14px; line-height: 1.65; resize: vertical;
     }
     textarea.body-edit.tx-edit { font-size: 12px; line-height: 1.7; }
+    .md-editor {
+      border: 1px solid var(--rule);
+      background: #fffdf8;
+      min-height: 420px;
+      height: calc(100dvh - 340px);
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .md-editor-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 2px;
+      padding: 4px 6px;
+      border-bottom: 1px solid var(--rule);
+      background: var(--panel);
+      flex-shrink: 0;
+    }
+    .md-editor-btn {
+      border: 0;
+      background: transparent;
+      color: var(--ink-soft);
+      padding: 4px 8px;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .md-editor-btn:hover { color: var(--ink); }
+    .md-editor-btn.on { color: var(--ink); font-weight: 600; }
+    .md-editor-btn:disabled { opacity: 0.45; cursor: default; }
+    .md-editor-sep {
+      width: 1px;
+      height: 14px;
+      background: var(--rule);
+      margin: 0 6px;
+    }
+    .md-editor-grow { margin-left: auto; }
+    .md-editor-find {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 6px 8px 8px;
+      border-bottom: 1px solid var(--rule);
+      background: var(--paper-2);
+      flex-shrink: 0;
+    }
+    .md-editor-find-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+    }
+    .md-editor-find input[type=text] {
+      width: auto;
+      flex: 1;
+      min-width: 120px;
+      padding: 5px 8px;
+      font-size: 13px;
+    }
+    .md-editor-count {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 12px;
+      color: var(--ink-soft);
+      white-space: nowrap;
+      min-width: 3em;
+    }
+    .md-editor-host {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .md-editor-host.off { display: none; }
+    .md-editor-host .cm-editor { height: 100%; }
+    .md-editor-host .cm-scroller { overflow: auto; }
+    .md-editor-host .cm-panels { display: none; }
+    .md-editor-preview {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding: 10px 14px;
+      background: #fffdf8;
+    }
     .todo-strip h3 { font-family: "Noto Serif SC", serif; font-size: 15px; margin: 0 0 8px; }
     .todo-mini {
       display: grid; grid-template-columns: 16px minmax(0, 1fr) auto;
