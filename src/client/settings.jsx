@@ -738,7 +738,7 @@ export function SettingsPage(props) {
   const sourceCards = [
     { id: 'dingtalk', label: '钉钉', hint: '扫码登录后拉 AI 听记。可写回标题和记录。', install: 'npm 会随安装脚本装 dws' },
     { id: 'feishu', label: '飞书', hint: '要过两页：先创建应用，再授权妙记。可写回标题和总结。', install: 'npm install -g @larksuite/cli' },
-    { id: 'tencent', label: '腾讯会议', hint: '扫码登录后拉录制智能纪要和元宝纪要。只读，不写回。', install: 'npm install -g @tencentcloud/tmeet' },
+    { id: 'tencent', label: '腾讯会议', hint: '扫码登录后拉录制智能纪要。个人版每天约 200 次 CLI，自动同步会省着用；逐字稿打开该页再拉。只读，不写回。', install: 'npm install -g @tencentcloud/tmeet' },
   ]
   const loginSource = (id) => {
     api('/api/sources/login', { provider: id }).then((r) => {
@@ -779,7 +779,7 @@ export function SettingsPage(props) {
       </div>
       <div className="block">
         <h3>同步</h3>
-        <p className="lede">列表「更新」只拉本机还没有的，每个来源最多 300 场。全量会把尚未入库的都拉完，未登录的来源会跳过。</p>
+        <p className="lede">列表「更新」只拉本机还没有的，每个来源最多 300 场。全量会把尚未入库的都拉完，未登录的来源会跳过。腾讯会议个人版有每日次数上限：自动同步约每 4 小时拉一次、只扫近 3 天；点「更新」或全量扫近 31 天，逐字稿在打开详情时再拉。</p>
         <p className="status">{
           pulling
             ? (syncProgressLabel(syncSt) || '同步中…页面可继续用')

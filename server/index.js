@@ -33,7 +33,7 @@ import { testKnowledgeGateway } from '../lib/knowledge.js'
 import { importMeeting } from '../lib/import-meeting.js'
 import { persistSyncResult, isSyncing, syncProgress, enqueueSync } from '../lib/sync-run.js'
 import { syncStatus } from '../lib/sync-status.js'
-import { refreshByMeeting, writeTitle, writeSummary, spawnLogin, authStatus, inferProvider, providerMeta } from '../lib/providers/index.js'
+import { refreshByMeeting, pullTranscriptByMeeting, writeTitle, writeSummary, spawnLogin, authStatus, inferProvider, providerMeta } from '../lib/providers/index.js'
 import { downloadMeetingMedia, mediaFileFor, removeMeetingMedia } from '../lib/media.js'
 import { applyAppUpdate, armAppUpdate, checkAppUpdate, markRunningRevision, scheduleRestart } from '../lib/app-update.js'
 import { applyZipBuffer } from '../lib/app-zip.js'
@@ -176,7 +176,7 @@ function armAutoSync() {
       console.error('[auto-sync] 首次检测失败:', e.message)
     }
   }, 8000)
-  setInterval(() => startSync({}, '自动更新'), AUTO_SYNC_MS)
+  setInterval(() => startSync({ auto: true }, '自动更新'), AUTO_SYNC_MS)
   console.log(`[auto-sync] 已启用：空库首次全量；之后每 ${AUTO_SYNC_MS / 60000} 分钟增量`)
 }
 
@@ -418,6 +418,35 @@ app.post('/api/meeting/refresh', async (req, res) => {
         indexChunkIds(ids).then((n) => {
           if (n) console.log(`[refresh] 已向量化 ${n} 段`)
         }).catch((e) => console.error('index refresh:', e.message))
+      })
+    }
+  } catch (e) { fail(res, e) }
+})
+
+app.post('/api/meeting/transcript', async (req, res) => {
+  try {
+    const id = String((req.body && req.body.id) || '')
+    if (!id) return fail(res, new Error('缺少 id'))
+    if (isSyncing()) return fail(res, new Error('正在同步中…请稍候'))
+    const db = open()
+    const m = getMeeting(db, id)
+    db.close()
+    if (!m) return fail(res, new Error('未找到会议'))
+    const r = await pullTranscriptByMeeting(m)
+    const bits = []
+    if (r.keptTranscript) bits.push('本机改过的逐字稿未覆盖')
+    if (r.transcriptCount) bits.push('逐字稿 ' + r.transcriptCount + ' 段')
+    const message = bits.length ? ('已从腾讯拉取逐字稿；' + bits.join('，')) : '已从腾讯拉取逐字稿'
+    pushLog('更新', '逐字稿 ' + (r.title || id) + (bits.length ? '（' + bits.join('，') + '）' : ''))
+    const detail = meetingDetail(id)
+    if (detail) detail.refresh = { ok: true, keptTranscript: r.keptTranscript, message }
+    ok(res, detail)
+    const ids = r.chunkIds || []
+    if (ids.length) {
+      setImmediate(() => {
+        indexChunkIds(ids).then((n) => {
+          if (n) console.log(`[transcript] 已向量化 ${n} 段`)
+        }).catch((e) => console.error('index transcript:', e.message))
       })
     }
   } catch (e) { fail(res, e) }

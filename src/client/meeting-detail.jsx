@@ -77,6 +77,9 @@ export function MeetingDetail(props) {
   const [delBusy, setDelBusy] = React.useState(false)
   const [confirmRefresh, setConfirmRefresh] = React.useState(false)
   const [refreshBusy, setRefreshBusy] = React.useState(false)
+  const [txBusy, setTxBusy] = React.useState(false)
+  const txTriedRef = React.useRef('')
+  const txBusyRef = React.useRef(false)
   const [mediaBusy, setMediaBusy] = React.useState(false)
   const [classifyBusy, setClassifyBusy] = React.useState(false)
   const [confirmDeep, setConfirmDeep] = React.useState(false)
@@ -96,7 +99,9 @@ export function MeetingDetail(props) {
   const titleOnlyRef = React.useRef(false)
   const load = React.useCallback(() => {
     setD(null); setErr(null); setSub('record'); setDeep(''); setEditing(false); setEditingBody(null)
-    setAddingTag(false); setAddingTodo(false); setAddingProject(false); setEditProjectQuery(''); setConfirmDel(false); setConfirmDeep(false); setConfirmSharedTitle(false); setConfirmRetract(false); setConfirmOverwrite(false); setConfirmUploadGate(false); setConfirmRefresh(false); setPubRemote(null)
+    setAddingTag(false); setAddingTodo(false); setAddingProject(false); setEditProjectQuery(''); setConfirmDel(false); setConfirmDeep(false); setConfirmSharedTitle(false); setConfirmRetract(false); setConfirmOverwrite(false); setConfirmUploadGate(false); setConfirmRefresh(false); setPubRemote(null); setTxBusy(false)
+    txTriedRef.current = ''
+    txBusyRef.current = false
     api('/api/detail?id=' + encodeURIComponent(uuid)).then((r) => {
       if (r && r.error) setErr(r.error)
       else {
@@ -171,11 +176,55 @@ export function MeetingDetail(props) {
     if (String(deep || '').trim()) { setConfirmDeep(true); return }
     runDeep()
   }
+  const applyDetail = (r) => {
+    if (!r || r.error) return r
+    setD(r)
+    setTitle(r.title || '')
+    setAttendees(r.attendees || '')
+    setSummary(r.summary || '')
+    setTxDraft((r.transcript || []).join('\n'))
+    setDeep(r.deepSummary || '')
+    setScope(r.type || r.scope || '')
+    setProjectName(r.projectName || '')
+    setDepartmentName(r.departmentName || '')
+    setTags(r.tags || [])
+    return r
+  }
+  const pullTx = React.useCallback(() => {
+    if (txBusyRef.current) return Promise.resolve(null)
+    txBusyRef.current = true
+    setTxBusy(true)
+    return api('/api/meeting/transcript', { id: uuid }, 'POST', { timeoutMs: 5 * 60 * 1000 }).then((r) => {
+      applyDetail(r)
+      const n = ((r && r.transcript) || []).length
+      toast((r && r.refresh && r.refresh.message) || (n ? '已从腾讯拉取逐字稿' : '腾讯没有返回逐字稿'))
+      if (onChanged) onChanged()
+      return r
+    }).catch((err) => {
+      toast('拉取逐字稿失败: ' + String(err && err.message || err))
+      return null
+    }).finally(() => {
+      txBusyRef.current = false
+      setTxBusy(false)
+    })
+  }, [uuid, toast, onChanged])
+  React.useEffect(() => {
+    if (sub !== 'transcript' || !d) return
+    if (txBusyRef.current) return
+    if (((d.transcript || []).join('\n')).trim()) return
+    if (d.transcriptEdited) return
+    if (!d.canPullTranscript) return
+    if (txTriedRef.current === uuid) return
+    txTriedRef.current = uuid
+    pullTx()
+  }, [sub, d, uuid, pullTx])
   const runDeep = () => {
     if (deeping) return
     setConfirmDeep(false)
     setDeeping(true); setCopied(false)
-    api('/api/summarize', { id: uuid }).then((r) => {
+    const needTx = d && d.canPullTranscript && !String(((d.transcript) || []).join('\n')).trim()
+    const start = needTx ? pullTx() : Promise.resolve()
+    start.then(() => api('/api/summarize', { id: uuid })).then((r) => {
       if (r && r.error) { toast('生成失败: ' + r.error); return }
       const text = r && r.summary || ''
       setDeep(text)
@@ -779,7 +828,15 @@ export function MeetingDetail(props) {
       ? e('div', { className: 'body-pane' },
           editingBody === 'transcript'
             ? e('textarea', { className: 'body-edit tx-edit', value: txDraft, onChange: (ev) => setTxDraft(ev.target.value) })
-            : e('div', { className: 'tx' }, txText || '没有逐字稿'),
+            : (txBusy
+              ? e('p', { className: 'hint' }, '正在从腾讯拉取逐字稿…长会可能要一两分钟。')
+              : (txText
+                ? e('div', { className: 'tx' }, txText)
+                : (d.canPullTranscript
+                  ? e('p', { className: 'hint' },
+                      '同步时不拉逐字稿，以节省腾讯 CLI 额度。',
+                      e('button', { className: 'quiet', style: { marginLeft: 8 }, onClick: pullTx }, '从腾讯拉取'))
+                  : e('div', { className: 'tx' }, '没有逐字稿')))),
           bodyHint ? e('p', { className: 'hint body-hint' }, bodyHint) : null)
       : null,
     sub === 'deep'

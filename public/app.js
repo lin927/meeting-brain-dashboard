@@ -34255,6 +34255,9 @@
     const [delBusy, setDelBusy] = import_react3.default.useState(false);
     const [confirmRefresh, setConfirmRefresh] = import_react3.default.useState(false);
     const [refreshBusy, setRefreshBusy] = import_react3.default.useState(false);
+    const [txBusy, setTxBusy] = import_react3.default.useState(false);
+    const txTriedRef = import_react3.default.useRef("");
+    const txBusyRef = import_react3.default.useRef(false);
     const [mediaBusy, setMediaBusy] = import_react3.default.useState(false);
     const [classifyBusy, setClassifyBusy] = import_react3.default.useState(false);
     const [confirmDeep, setConfirmDeep] = import_react3.default.useState(false);
@@ -34291,6 +34294,9 @@
       setConfirmUploadGate(false);
       setConfirmRefresh(false);
       setPubRemote(null);
+      setTxBusy(false);
+      txTriedRef.current = "";
+      txBusyRef.current = false;
       api("/api/detail?id=" + encodeURIComponent(uuid)).then((r) => {
         if (r && r.error) setErr(r.error);
         else {
@@ -34380,12 +34386,56 @@
       }
       runDeep();
     };
+    const applyDetail = (r) => {
+      if (!r || r.error) return r;
+      setD(r);
+      setTitle(r.title || "");
+      setAttendees(r.attendees || "");
+      setSummary(r.summary || "");
+      setTxDraft((r.transcript || []).join("\n"));
+      setDeep(r.deepSummary || "");
+      setScope(r.type || r.scope || "");
+      setProjectName(r.projectName || "");
+      setDepartmentName(r.departmentName || "");
+      setTags(r.tags || []);
+      return r;
+    };
+    const pullTx = import_react3.default.useCallback(() => {
+      if (txBusyRef.current) return Promise.resolve(null);
+      txBusyRef.current = true;
+      setTxBusy(true);
+      return api("/api/meeting/transcript", { id: uuid }, "POST", { timeoutMs: 5 * 60 * 1e3 }).then((r) => {
+        applyDetail(r);
+        const n = (r && r.transcript || []).length;
+        toast(r && r.refresh && r.refresh.message || (n ? "\u5DF2\u4ECE\u817E\u8BAF\u62C9\u53D6\u9010\u5B57\u7A3F" : "\u817E\u8BAF\u6CA1\u6709\u8FD4\u56DE\u9010\u5B57\u7A3F"));
+        if (onChanged) onChanged();
+        return r;
+      }).catch((err2) => {
+        toast("\u62C9\u53D6\u9010\u5B57\u7A3F\u5931\u8D25: " + String(err2 && err2.message || err2));
+        return null;
+      }).finally(() => {
+        txBusyRef.current = false;
+        setTxBusy(false);
+      });
+    }, [uuid, toast, onChanged]);
+    import_react3.default.useEffect(() => {
+      if (sub !== "transcript" || !d) return;
+      if (txBusyRef.current) return;
+      if ((d.transcript || []).join("\n").trim()) return;
+      if (d.transcriptEdited) return;
+      if (!d.canPullTranscript) return;
+      if (txTriedRef.current === uuid) return;
+      txTriedRef.current = uuid;
+      pullTx();
+    }, [sub, d, uuid, pullTx]);
     const runDeep = () => {
       if (deeping) return;
       setConfirmDeep(false);
       setDeeping(true);
       setCopied(false);
-      api("/api/summarize", { id: uuid }).then((r) => {
+      const needTx = d && d.canPullTranscript && !String((d.transcript || []).join("\n")).trim();
+      const start = needTx ? pullTx() : Promise.resolve();
+      start.then(() => api("/api/summarize", { id: uuid })).then((r) => {
         if (r && r.error) {
           toast("\u751F\u6210\u5931\u8D25: " + r.error);
           return;
@@ -35036,7 +35086,12 @@
       sub === "transcript" ? e2(
         "div",
         { className: "body-pane" },
-        editingBody === "transcript" ? e2("textarea", { className: "body-edit tx-edit", value: txDraft, onChange: (ev) => setTxDraft(ev.target.value) }) : e2("div", { className: "tx" }, txText || "\u6CA1\u6709\u9010\u5B57\u7A3F"),
+        editingBody === "transcript" ? e2("textarea", { className: "body-edit tx-edit", value: txDraft, onChange: (ev) => setTxDraft(ev.target.value) }) : txBusy ? e2("p", { className: "hint" }, "\u6B63\u5728\u4ECE\u817E\u8BAF\u62C9\u53D6\u9010\u5B57\u7A3F\u2026\u957F\u4F1A\u53EF\u80FD\u8981\u4E00\u4E24\u5206\u949F\u3002") : txText ? e2("div", { className: "tx" }, txText) : d.canPullTranscript ? e2(
+          "p",
+          { className: "hint" },
+          "\u540C\u6B65\u65F6\u4E0D\u62C9\u9010\u5B57\u7A3F\uFF0C\u4EE5\u8282\u7701\u817E\u8BAF CLI \u989D\u5EA6\u3002",
+          e2("button", { className: "quiet", style: { marginLeft: 8 }, onClick: pullTx }, "\u4ECE\u817E\u8BAF\u62C9\u53D6")
+        ) : e2("div", { className: "tx" }, "\u6CA1\u6709\u9010\u5B57\u7A3F"),
         bodyHint ? e2("p", { className: "hint body-hint" }, bodyHint) : null
       ) : null,
       sub === "deep" ? e2(
@@ -36934,7 +36989,7 @@
     const sourceCards = [
       { id: "dingtalk", label: "\u9489\u9489", hint: "\u626B\u7801\u767B\u5F55\u540E\u62C9 AI \u542C\u8BB0\u3002\u53EF\u5199\u56DE\u6807\u9898\u548C\u8BB0\u5F55\u3002", install: "npm \u4F1A\u968F\u5B89\u88C5\u811A\u672C\u88C5 dws" },
       { id: "feishu", label: "\u98DE\u4E66", hint: "\u8981\u8FC7\u4E24\u9875\uFF1A\u5148\u521B\u5EFA\u5E94\u7528\uFF0C\u518D\u6388\u6743\u5999\u8BB0\u3002\u53EF\u5199\u56DE\u6807\u9898\u548C\u603B\u7ED3\u3002", install: "npm install -g @larksuite/cli" },
-      { id: "tencent", label: "\u817E\u8BAF\u4F1A\u8BAE", hint: "\u626B\u7801\u767B\u5F55\u540E\u62C9\u5F55\u5236\u667A\u80FD\u7EAA\u8981\u548C\u5143\u5B9D\u7EAA\u8981\u3002\u53EA\u8BFB\uFF0C\u4E0D\u5199\u56DE\u3002", install: "npm install -g @tencentcloud/tmeet" }
+      { id: "tencent", label: "\u817E\u8BAF\u4F1A\u8BAE", hint: "\u626B\u7801\u767B\u5F55\u540E\u62C9\u5F55\u5236\u667A\u80FD\u7EAA\u8981\u3002\u4E2A\u4EBA\u7248\u6BCF\u5929\u7EA6 200 \u6B21 CLI\uFF0C\u81EA\u52A8\u540C\u6B65\u4F1A\u7701\u7740\u7528\uFF1B\u9010\u5B57\u7A3F\u6253\u5F00\u8BE5\u9875\u518D\u62C9\u3002\u53EA\u8BFB\uFF0C\u4E0D\u5199\u56DE\u3002", install: "npm install -g @tencentcloud/tmeet" }
     ];
     const loginSource = (id2) => {
       api("/api/sources/login", { provider: id2 }).then((r) => {
@@ -36964,7 +37019,7 @@
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "block", children: [
         /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h3", { children: "\u540C\u6B65" }),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "lede", children: "\u5217\u8868\u300C\u66F4\u65B0\u300D\u53EA\u62C9\u672C\u673A\u8FD8\u6CA1\u6709\u7684\uFF0C\u6BCF\u4E2A\u6765\u6E90\u6700\u591A 300 \u573A\u3002\u5168\u91CF\u4F1A\u628A\u5C1A\u672A\u5165\u5E93\u7684\u90FD\u62C9\u5B8C\uFF0C\u672A\u767B\u5F55\u7684\u6765\u6E90\u4F1A\u8DF3\u8FC7\u3002" }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "lede", children: "\u5217\u8868\u300C\u66F4\u65B0\u300D\u53EA\u62C9\u672C\u673A\u8FD8\u6CA1\u6709\u7684\uFF0C\u6BCF\u4E2A\u6765\u6E90\u6700\u591A 300 \u573A\u3002\u5168\u91CF\u4F1A\u628A\u5C1A\u672A\u5165\u5E93\u7684\u90FD\u62C9\u5B8C\uFF0C\u672A\u767B\u5F55\u7684\u6765\u6E90\u4F1A\u8DF3\u8FC7\u3002\u817E\u8BAF\u4F1A\u8BAE\u4E2A\u4EBA\u7248\u6709\u6BCF\u65E5\u6B21\u6570\u4E0A\u9650\uFF1A\u81EA\u52A8\u540C\u6B65\u7EA6\u6BCF 4 \u5C0F\u65F6\u62C9\u4E00\u6B21\u3001\u53EA\u626B\u8FD1 3 \u5929\uFF1B\u70B9\u300C\u66F4\u65B0\u300D\u6216\u5168\u91CF\u626B\u8FD1 31 \u5929\uFF0C\u9010\u5B57\u7A3F\u5728\u6253\u5F00\u8BE6\u60C5\u65F6\u518D\u62C9\u3002" }),
         /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "status", children: pulling ? syncProgressLabel(syncSt) || "\u540C\u6B65\u4E2D\u2026\u9875\u9762\u53EF\u7EE7\u7EED\u7528" : lastSyncLabel(syncSt) ? "\u4E0A\u6B21\uFF1A" + lastSyncLabel(syncSt) : "\u8FD8\u6CA1\u540C\u6B65\u8FC7" }),
         /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { className: "primary", disabled: pulling, onClick: () => setConfirmFull(true), children: pulling ? "\u540C\u6B65\u4E2D\u2026" : "\u5168\u91CF\u540C\u6B65" }),
         confirmFull ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
