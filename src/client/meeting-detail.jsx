@@ -928,7 +928,7 @@ export function MeetingDetail(props) {
         const who = pubRemote && pubRemote.uploadedBy
         const other = who && pubOperator && who !== pubOperator
         if (other) return '这篇是' + who + '上传的。撤回会从「' + (meetType || '对应') + '」知识库删掉现在这一份。本机记录、总结和待办都还在。'
-        return '会从「' + (meetType || '对应') + '」知识库撤回这场会。本机记录、总结和待办都还在。'
+        return '会从「' + (meetType || '对应') + '」知识库撤回这场会。知识库里已经找不到这篇时，只取消本机上传标记。本机记录、总结和待办都还在。'
       })(),
       confirmLabel: '撤回',
       danger: true,
@@ -1035,9 +1035,9 @@ export function MeetingDetail(props) {
         const who = pubRemote && pubRemote.uploadedBy
         const when = pubRemote && pubRemote.uploadedAt ? fmtDateTime(Date.parse(pubRemote.uploadedAt)) : ''
         const whoWhen = [who, when].filter(Boolean).join(' · ')
-        if (pubRemote && pubRemote.gateway === false) return '本机已标记上传过（旧 RAGFlow 记录）。覆盖会重新归档到知识库网关。'
-        if (whoWhen) return '本机已标记上传过（' + whoWhen + '）。覆盖会先撤回旧稿，再提交你这份总结和待办。'
-        return '本机已标记上传过。覆盖会先撤回旧稿，再提交你这份总结和待办。'
+        if (pubRemote && pubRemote.gateway === false) return '本机已标记上传过（旧 RAGFlow 记录）。覆盖会重新归档到知识库网关。知识库里找不到旧稿时会直接传新的。'
+        if (whoWhen) return '本机已标记上传过（' + whoWhen + '）。覆盖会先撤回旧稿，再提交你这份总结和待办。知识库里已经找不到旧稿时，会直接传新的。'
+        return '本机已标记上传过。覆盖会先撤回旧稿，再提交你这份总结和待办。知识库里已经找不到旧稿时，会直接传新的。'
       })(),
       confirmLabel: '覆盖',
       danger: true,
